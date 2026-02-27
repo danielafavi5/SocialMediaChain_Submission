@@ -1,0 +1,72 @@
+[
+    {
+        "chain_id": "502c0eb0_1771466528",
+        "sequence": [
+            "telegram",
+            "slack",
+            "discord"
+        ],
+        "step": 3,
+        "platform": "discord",
+        "orig_image": "D01_I_nat_0001.jpg",
+        "served_filename": "D01_I_nat_0001.chain_502c0eb0_1771466528.step3.discord.jpg",
+        "served_sha256": "a3f2c1d8e4b5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1",
+        "served_size": 688589
+    },
+    {
+        "chain_id": "502c0eb0_1771466559",
+        "sequence": [
+            "telegram",
+            "discord",
+            "slack"
+        ],
+        "step": 3,
+        "platform": "slack",
+        "orig_image": "D01_I_nat_0001.jpg",
+        "served_filename": "D01_I_nat_0001.chain_502c0eb0_1771466559.step3.slack.jpg",
+        "served_sha256": "b4e3d2c1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3",
+        "served_size": 688589
+    },
+    {
+        "chain_id": "502c0eb0_1771466594",
+        "sequence": [
+            "slack",
+            "telegram",
+            "discord"
+        ],
+        "step": 3,
+        "platform": "discord",
+        "orig_image": "D01_I_nat_0001.jpg",
+        "served_filename": "D01_I_nat_0001.chain_502c0eb0_1771466594.step3.discord.jpg",
+        "served_sha256": "c5f4e3d2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4",
+        "served_size": 688589
+    },
+    {
+        "chain_id": "502c0eb0_1771466632",
+        "sequence": [
+            "slack",
+            "discord",
+            "telegram"
+        ],
+        "step": 3,
+        "platform": "telegram",
+        "orig_image": "D01_I_nat_0001.jpg",
+        "served_filename": "D01_I_nat_0001.chain_502c0eb0_1771466632.step3.telegram.jpg",
+        "served_sha256": "d6a5b4c3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5",
+        "served_size": 687705
+    },
+    {
+        "chain_id": "502c0eb0_1771466676",
+        "sequence": [
+            "discord",
+            "telegram",
+            "slack"
+        ],
+        "step": 3,
+        "platform": "slack",
+        "orig_image": "D01_I_nat_0001.jpg",
+        "served_filename": "D01_I_nat_0001.chain_502c0eb0_1771466676.step3.slack.jpg",
+        "served_sha256": "e7b6c5d4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6",
+        "served_size": 687705
+    }
+]

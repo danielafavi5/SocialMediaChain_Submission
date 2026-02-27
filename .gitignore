@@ -1,0 +1,24 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Data/Cache files
+*.npz
+*.npy
+
+# Config files (if any)
+config.ini
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# IDE files
+.vscode/
+.idea/
+
+# Specific project files to exclude
+defense_notes.md
