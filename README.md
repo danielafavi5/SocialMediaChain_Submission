@@ -40,7 +40,7 @@ The package is fully self-contained. No internet connection or re-training is re
 | Pre-trained C2 model (BKS residual RF) | `models/c2_residual.joblib` |
 | Adversarial pruning index | `models/pruned_indices.npy` |
 | 1,000 ground-truth 2026 test images | `samples/` |
-| Ground-truth manifest schema | `manifest_example.json` |
+| Ground-truth manifest schema | `manifest.json` |
 | Reproducibility script | `scripts/reproduce_results_offline.py` |
 
 ---
@@ -72,17 +72,17 @@ See `research_summary.md` for the full derivation.
 
 ```
 ├── core/                    Feature extractor + BKS fusion logic
-├── training/                Training pipeline source
-├── audits/                  Chain evaluation scripts
 ├── models/                  Pre-trained .joblib artifacts
 ├── assets/                  Diagnostic graphs
 ├── samples/                 Ground-truth 2026 test images
 ├── scripts/                 Utility scripts
 ├── analyze_image.py         Single-image CLI tool
 ├── export_models.py         Re-train and save models from scratch
-├── manifest_example.json    Sample ground-truth manifest (5 chains)
+├── run_all.py               Master pipeline orchestrator (generates manifest & splits)
+├── manifest.json            Full 1,000-image ground-truth tracking scheme
+├── phase7_features_cache.npz Intermediate augmented feature cache
+├── samples_test_split.json  Strict 201-image testing holdout constraint array
 ├── methodology.md           Data pipeline and feature engineering details
 ├── research_summary.md      Forensic Horizon mathematical explanation
-├── defense_notes.md         Oral defense Q&A guide
 └── requirements.txt
 ```
