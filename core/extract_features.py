@@ -19,12 +19,38 @@ from collections import defaultdict
 
 from forensic_features import ForensicFeatureExtractor, FEATURE_DIM
 
-RESULTS_2026 = Path("results_2026")
+RESULTS_2026 = Path("results_2026/results_2026")
 CACHE_FILE = "phase7_features_cache.npz"
+
+import tempfile
+from PIL import Image
 
 def extract_single(img_path):
     ext = ForensicFeatureExtractor()
-    return os.path.basename(img_path), ext.extract(img_path)
+    fname = os.path.basename(img_path)
+    
+    # 1. Ghost Simulation: Simulate subsequent platform compression
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+        tmp_name = tmp.name
+        
+    try:
+        img = Image.open(img_path)
+        if img.mode not in ("RGB", "L", "YCbCr"): img = img.convert("RGB")
+        img.save(tmp_name, format="JPEG", quality=75)
+        
+        vec = ext.extract(tmp_name)
+    finally:
+        if os.path.exists(tmp_name):
+            os.remove(tmp_name)
+            
+    # 2. Extract chain_id for the leak-free test split
+    chain_id = "unknown"
+    try:
+        chain_id = fname.split(".chain_")[1].split(".step")[0]
+    except Exception:
+        pass
+        
+    return fname, chain_id, vec
 
 def main():
     print(f"Phase 7 Augmented Extraction | Feature Dim = {FEATURE_DIM}")
@@ -48,28 +74,32 @@ def main():
     with ProcessPoolExecutor(max_workers=4) as exe:
         futures = {exe.submit(extract_single, f): f for f in files_to_process}
         for fut in as_completed(futures):
-            fname, vec = fut.result()
+            fname, cid, vec = fut.result()
             if np.count_nonzero(vec) > 0:
-                results.append((fname, vec))
+                results.append((fname, cid, vec))
                 
     print(f"  -> Done in {time.time()-t0:.1f}s. Valid: {len(results)}")
     
     # Parse labels from filename: D01_I_nat_0001.chain_xxxx.step2.telegram.jpg
     X = []
     labels = []
+    cids = []
     
-    for fname, vec in results:
+    for fname, cid, vec in results:
         plat = fname.split('.')[3] # platform is the 4th token
         X.append(vec)
         labels.append(plat)
+        cids.append(cid)
         
     X = np.array(X, dtype=np.float32)
     labels = np.array(labels)
+    cids = np.array(cids)
     
     np.savez_compressed(
         CACHE_FILE,
         X_aug=X,
-        labels_aug=labels
+        labels_aug=labels,
+        cids_aug=cids
     )
     print(f"Saved Augmented Cache -> {CACHE_FILE} (Shape: {X.shape})")
 

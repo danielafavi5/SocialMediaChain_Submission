@@ -41,7 +41,7 @@ CLASS_NAMES = {0: "telegram", 1: "slack", 2: "discord"}
 # ---------------------------------------------------------------------------
 def _repo_root() -> str:
     """Return the directory that contains this script (repo root)."""
-    return os.path.dirname(os.path.abspath(__file__))
+    return "."
 
 
 def _resolve(*parts: str) -> str:
@@ -73,12 +73,11 @@ def load_model(models_dir: str):
     Raises:
         SystemExit(1) if any model file is missing.
     """
-    c1_path     = os.path.join(models_dir, "c1_surface.joblib")
-    pruned_path = os.path.join(models_dir, "pruned_indices.npy")
-
-    if not os.path.isfile(c1_path):
+    c2_path     = os.path.join(models_dir, "c2_residual.joblib")
+    
+    if not os.path.isfile(c1_path) or not os.path.isfile(c2_path):
         _fail(
-            f"Model file not found: {c1_path}",
+            f"Model files missing",
             "Run  python export_models.py  to generate the model artifacts.",
         )
     if not os.path.isfile(pruned_path):
@@ -87,9 +86,10 @@ def load_model(models_dir: str):
             "Run  python export_models.py  to regenerate all model artifacts.",
         )
 
-    model          = joblib.load(c1_path)
+    model_c1       = joblib.load(c1_path)
+    model_c2       = joblib.load(c2_path)
     pruned_indices = np.load(pruned_path)
-    return model, pruned_indices
+    return model_c1, model_c2, pruned_indices
 
 
 # ---------------------------------------------------------------------------
@@ -126,19 +126,24 @@ def extract_features(image_path: str):
 # ---------------------------------------------------------------------------
 # Prediction
 # ---------------------------------------------------------------------------
-def predict(feat: np.ndarray, model) -> tuple[str, float]:
+def predict(feat: np.ndarray, model_c1, model_c2, pruned_indices) -> tuple[str, float, str]:
     """
-    Run the RF classifier on the full surface feature vector.
+    Run C1 for surface and C2 for residual classification.
 
     Returns:
-        (platform_name: str, confidence: float)
+        (surface_platform, confidence, residual_platform)
     """
     feat_surface = feat[:258].reshape(1, -1)
-    pred_class   = int(model.predict(feat_surface)[0])
-    probas       = model.predict_proba(feat_surface)[0]
-    platform     = CLASS_NAMES.get(pred_class, "unknown")
+    pred_class   = int(model_c1.predict(feat_surface)[0])
+    probas       = model_c1.predict_proba(feat_surface)[0]
+    surface      = CLASS_NAMES.get(pred_class, "unknown")
     confidence   = float(probas[pred_class]) if pred_class < len(probas) else 0.0
-    return platform, confidence
+
+    feat_resid   = feat[pruned_indices].reshape(1, -1)
+    pred_c2      = int(model_c2.predict(feat_resid)[0])
+    resid        = CLASS_NAMES.get(pred_c2, "unknown")
+
+    return surface, confidence, resid
 
 
 def ghost_trace(feat: np.ndarray, surface_platform: str) -> tuple[str | None, dict | None]:
@@ -200,12 +205,18 @@ def main() -> None:
     models_dir = _resolve("models")
 
     # --- Pipeline ---
-    model, pruned_indices = load_model(models_dir)
+    model_c1, model_c2, pruned_indices = load_model(models_dir)
     feat                  = extract_features(args.image)
-    surface, confidence   = predict(feat, model)
+    surface, confidence, resid = predict(feat, model_c1, model_c2, pruned_indices)
     ghost, ghost_meta     = ghost_trace(feat, surface)
 
-    chain = ([ghost] if ghost else []) + [surface]
+    # Use BKS sequence fusion logic conceptually:
+    import core.bks_fusion as bks_fusion
+    bks = bks_fusion.SequenceAwareBKS(bks_fusion.Q_TABLE_LIBRARY)
+    dqt = feat[LUMA_DQT_SLICE] * LUMA_DQT_SCALE
+    
+    # Let's bypass full sequence fusion for single image and just report C2 output natively instead.
+    chain = ([ghost] if ghost else [resid]) + [surface]
 
     # --- Output ---
     if args.json:

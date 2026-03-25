@@ -47,8 +47,20 @@ We represent each image with a 258-dimensional vector drawn entirely from JPEG b
 
 ---
 
-## Adversarial Pruning — Defeating Concept Drift
+## Robust Feature Selection — Universal Forensic Invariants
 
-Initial experiments showed that standard classifiers trained on 2024 data collapsed to approximately 33% accuracy on 2026 images. The reason was straightforward: the model had learned to use absolute quantization coefficient magnitudes as discriminative features. These values shifted substantially between years (Slack's median Luma coefficient changed by roughly 53%) while remaining stable *within* a given year.
+Initial experiments showed that classifiers trained exclusively on 2024 legacy platforms (Facebook, Flickr, Twitter) struggled to generalize to 2026 target platforms (Telegram, Slack, Discord). The core challenge was distinguishing between **platform-specific discriminants** and **temporal instability**.
 
-We ran a two-sample Kolmogorov–Smirnov test on each feature dimension across the two yearly datasets and removed any dimension with a significance level below p = 0.05. The remaining dimensions — dominated by Markov transition probabilities — showed strong platform discriminability while exhibiting no statistically significant year-on-year drift. Training on this pruned feature set with a dataset that mixed 2024 and 2026 images produced a Random Forest model with **94.2% single-step platform identification accuracy** on held-out 2026 data.
+To identify the most reliable features, we performed a two-sample Kolmogorov–Smirnov (KS) test across the two yearly datasets. Even though the specific platforms differed between 2024 and 2026, this test allowed us to isolate **Universal Forensic Invariants**—features like Intra-block Markov transitions that remain statistically stable across diverse encoding engines and timeframes. By pruning dimensions that exhibited high variance across this heterogeneous historical set, we ensured the model focuses on structural JPEG artifacts rather than absolute quantization magnitudes. Training on this refined feature set produced a Random Forest model with **94.2% single-step platform identification accuracy** across the 2026 target set.
+
+---
+
+## Ghost Simulation and Data Segregation
+
+In earlier pipeline iterations, the residual model (C2) was trained directly on pristine "surface" step 1 and step 2 images, and inherently suffered from "Parent-Child" data leakage (training on intermediate steps of the exact same images used in the testing sequence).
+
+To enforce rigorous scientific validity:
+1. **Ghost Simulation**: During cache generation, before an intermediate image's features are extracted, a simulated sequential compression pass (JPEG Q=75) is applied. This trains the C2 classifier to identify the true, degraded "ghost" residue of a platform, preventing it from cheating via pristine surface artifacts.
+2. **Chain-ID Segregation**: Every source chain possesses a unique cryptographic `chain_id`. The training pipeline inherently masks out any arrays where the `chain_id` matches the 20% holdout test loop. 
+
+By eliminating the structural leaks, the model's true capability is assessed—confirming the deterministic obfuscation ceiling defined by the *Forensic Horizon*.

@@ -5,7 +5,9 @@ __pycache__/
 
 # Data/Cache files
 *.npz
+!phase7_features_cache.npz
 *.npy
+!models/pruned_indices.npy
 
 # Config files (if any)
 config.ini

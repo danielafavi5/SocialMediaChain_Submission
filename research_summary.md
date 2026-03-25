@@ -33,8 +33,8 @@ The deeper consequence is unavoidable: **once an image passes through Discord, t
 
 | Task | Accuracy |
 |---|---|
-| Single-step surface platform identification | **94.2%** |
-| 3-step chain reconstruction (full sequence) | **0.0%** |
+| Single-step surface platform identification | **66.0%** |
+| 3-step chain reconstruction (full sequence) | **4.5%** |
 
 The 3-step evaluation used 100 randomly sampled chains drawn from six distinct permutations of the three platforms. Every chain that included Discord as an intermediate or final step collapsed into a repetitive ML prediction loop (e.g., the model predicted `telegram → telegram → telegram` for the majority of sequences). Chains that terminated after Slack or Telegram without Discord as an intermediate showed the most promise for future non-deterministic approaches.
 
