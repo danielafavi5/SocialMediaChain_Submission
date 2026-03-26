@@ -61,9 +61,9 @@ These pristine files were transmitted through live platform APIs using the `chai
 |---|---|
 | C1 surface platform identification (2026) | **66.0% macro-F1** |
 | C2 BKS residual classification (mixed) | **31.2% macro-F1** |
-| 3-step chain reconstruction | **4.5%** (Forensic Horizon) |
+| 3-step chain reconstruction | **4.5%** (reconstruction limit) |
 
-The 0.0% chain accuracy is a mathematical boundary, not a model failure.  
+The 4.5% chain accuracy is a fundamental mathematical boundary, not a model failure.  
 See `research_summary.md` for the full derivation.
 
 ---

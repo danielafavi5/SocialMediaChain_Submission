@@ -37,13 +37,19 @@ Each iteration reduces quality by only 2 points and checks in memory before writ
 
 ## Feature Extraction — Structural Invariants Over Metadata
 
-We represent each image with a 258-dimensional vector drawn entirely from JPEG block structure. The motivating insight is that platform compression engines consistently alter quantization table values and chroma subsampling, but they cannot undo the spatial *shape* of DCT blocks from a prior compression round.
+We represent each image with a 258-dimensional vector drawn entirely from JPEG block structure and metadata parameters. The motivating insight is that platform compression engines consistently alter quantization table values and chroma subsampling, but they cannot undo the spatial *shape* of DCT blocks from a prior compression round.
+
+**DCT AC Histograms & Energy Maps (42 dimensions).** We measure the statistical distribution and absolute energy of the first 21 AC coefficients in zigzag order.
 
 **Intra-block Markov transitions (T=4, 81 dimensions).** For each 8×8 DCT block, we read AC coefficients in zigzag order and record transitions between quantized integer bins (clipped to T=4 levels). The 9×9 transition probability matrix (flattened to 81 values) captures the local spatial texture in a way that survives quantization changes.
 
-**Ghost peak null-bins (16 dimensions).** When an image is compressed twice, the second quantization step tends to push energy out of specific AC histogram bins, leaving visible null-bins. We measure the density of zero-occupancy bins across coarse, mid, and high-frequency AC positions.
+**Luminance & Chrominance Q-Tables + Stats (112 dimensions).** We directly embed the 64-element Luma table and the 40-element Chroma table, alongside mean, std, min, and max statistical aggregations for both.
 
-**Q-table L1 distances (6 dimensions).** The mean absolute deviation between the extracted Luma quantization table and each entry in our standard-library table database (2024 and 2026 versions of the three platforms).
+**Metadata & Structural Flags (12 dimensions).** These dimensions capture explicit properties parsed from the header (e.g., progressive encoding, quality estimate flags).
+
+**Ghost peak null-bins (5 dimensions).** When an image is compressed twice, the second quantization step tends to push energy out of specific AC histogram bins, leaving visible null-bins. We measure the density of zero-occupancy bins exclusively across the critical AC1-AC5 high-frequency positions.
+
+**Q-table L1 distances (6 dimensions).** The mean absolute deviation between the extracted Luma quantization table and each entry in our standard-library database (2024 and 2026 versions of Telegram, Discord, Slack).
 
 ---
 
@@ -51,7 +57,7 @@ We represent each image with a 258-dimensional vector drawn entirely from JPEG b
 
 Initial experiments showed that classifiers trained exclusively on 2024 legacy platforms (Facebook, Flickr, Twitter) struggled to generalize to 2026 target platforms (Telegram, Slack, Discord). The core challenge was distinguishing between **platform-specific discriminants** and **temporal instability**.
 
-To identify the most reliable features, we performed a two-sample Kolmogorov–Smirnov (KS) test across the two yearly datasets. Even though the specific platforms differed between 2024 and 2026, this test allowed us to isolate **Universal Forensic Invariants**—features like Intra-block Markov transitions that remain statistically stable across diverse encoding engines and timeframes. By pruning dimensions that exhibited high variance across this heterogeneous historical set, we ensured the model focuses on structural JPEG artifacts rather than absolute quantization magnitudes. Training on this refined feature set produced a Random Forest model with **94.2% single-step platform identification accuracy** across the 2026 target set.
+To identify the most reliable features, we performed a two-sample Kolmogorov–Smirnov (KS) test across the two yearly datasets. Even though the specific platforms differed between 2024 and 2026, this test allowed us to isolate **Universal Forensic Invariants**—features like Intra-block Markov transitions that remain statistically stable across diverse encoding engines and timeframes. By pruning dimensions that exhibited high variance across this heterogeneous historical set, we ensured the model focuses on structural JPEG artifacts rather than absolute quantization magnitudes. Training on this refined feature set produced a Random Forest model with **66.0% single-step platform identification macro-F1** across the 2026 target set.
 
 ---
 
@@ -63,4 +69,4 @@ To enforce rigorous scientific validity:
 1. **Ghost Simulation**: During cache generation, before an intermediate image's features are extracted, a simulated sequential compression pass (JPEG Q=75) is applied. This trains the C2 classifier to identify the true, degraded "ghost" residue of a platform, preventing it from cheating via pristine surface artifacts.
 2. **Chain-ID Segregation**: Every source chain possesses a unique cryptographic `chain_id`. The training pipeline inherently masks out any arrays where the `chain_id` matches the 20% holdout test loop. 
 
-By eliminating the structural leaks, the model's true capability is assessed—confirming the deterministic obfuscation ceiling defined by the *Forensic Horizon*.
+By eliminating the structural leaks, the model's true capability is assessed—confirming the fundamental tracking limit created by aggressive compression.
