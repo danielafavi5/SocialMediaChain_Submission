@@ -3,8 +3,7 @@
 chained_uploader_fixed_keys.py
 
 Chained upload/download orchestrator for Telegram, Slack, Reddit.
-All service tokens and access keys are defined as global fixed variables
-for local student testing. Do not commit this file to any public repo.
+All service tokens and access keys are defined as global fixed variables.
 """
 
 import os
