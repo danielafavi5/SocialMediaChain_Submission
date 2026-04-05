@@ -59,7 +59,7 @@ These pristine files were transmitted through live platform APIs using the `chai
 
 | Task | Result |
 |---|---|
-| C1 surface platform identification (2026) | **66.0% macro-F1** |
+| C1 surface platform identification (2026) | **66.5% macro-F1** |
 | C2 BKS residual classification (mixed) | **31.2% macro-F1** |
 | 3-step chain reconstruction | **4.5%** (reconstruction limit) |
 
