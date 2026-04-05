@@ -63,10 +63,10 @@ To identify the most reliable features, we performed a two-sample Kolmogorov–S
 
 ## Ghost Simulation and Data Segregation
 
-In earlier pipeline iterations, the residual model (C2) was trained directly on pristine "surface" step 1 and step 2 images, and inherently suffered from "Parent-Child" data leakage (training on intermediate steps of the exact same images used in the testing sequence).
+The residual classifier (C2) is trained on intermediate chain steps — the step 1 and step 2 images that were passed through a real platform before being passed to the next one. Two design decisions ensure this training data reflects real-world conditions rather than artificially clean inputs.
 
-To enforce rigorous scientific validity:
-1. **Ghost Simulation**: During cache generation, before an intermediate image's features are extracted, a simulated sequential compression pass (JPEG Q=75) is applied. This trains the C2 classifier to identify the true, degraded "ghost" residue of a platform, preventing it from cheating via pristine surface artifacts.
-2. **Chain-ID Segregation**: Every source chain possesses a unique cryptographic `chain_id`. The training pipeline inherently masks out any arrays where the `chain_id` matches the 20% holdout test loop. 
+**Ghost Simulation.** Before extracting features from a training image, the pipeline re-saves it as a JPEG at quality 75 using PIL into a temporary file, extracts the 258-dimensional feature vector from that file, and then deletes it. This ensures the features C2 learns from represent a signal that has already been through at least one compression round — matching the actual condition of intermediate chain images at inference time.
 
-By eliminating the structural leaks, the model's true capability is assessed—confirming the fundamental tracking limit created by aggressive compression.
+**Chain-ID segregation.** Each image group in the dataset is assigned a `chain_id` derived from the SHA-256 of the payload at upload time. When building the C2 training set, the pipeline reads the 20% holdout file list from `samples_test_split.json`, extracts the `chain_id` of every image in that list, and removes any training sample whose `chain_id` appears in that set. This guarantees that no training example comes from the same source image as any test example, even across different compression steps.
+
+Together, these two steps ensure C2 is evaluated on genuinely unseen data and learns compression residue patterns rather than surface-level artifacts from pristine originals.

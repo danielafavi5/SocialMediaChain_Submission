@@ -98,7 +98,7 @@ def main():
     y1 = np.array(y1_list)
     print(f"  Samples used  : {X1.shape[0]}  |  Feature dims : {X1.shape[1]}")
 
-    # Here we can just directly train on X1/y1 and use CV score or typical random split
+    # Validation split used to report pre-save metric; model is then retrained on full training set.
     X1_tr, X1_val, y1_tr, y1_val = train_test_split(
         X1, y1, test_size=0.2, random_state=42, stratify=y1
     )
@@ -108,7 +108,7 @@ def main():
     c1_f1 = f1_score(y1_val, c1.predict(X1_val), average="macro")
     print(f"\nC1 (surface, samples/ train split) validation macro-F1: {c1_f1:.4f}")
     
-    # Fit on all training data eventually, but we leave as is for now:
+    # Refit on the full training set; this is what gets saved as the artifact.
     c1.fit(X1, y1)
     joblib.dump(c1, C1_PATH)
     print(f"  Saved -> {C1_PATH}")

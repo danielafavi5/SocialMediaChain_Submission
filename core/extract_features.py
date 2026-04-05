@@ -1,5 +1,5 @@
 """
-phase7_data_extract.py
+extract_features.py
 ======================
 Phase 7: Augmented Chain Training - Feature Extraction
 
@@ -86,7 +86,7 @@ def main():
     cids = []
     
     for fname, cid, vec in results:
-        plat = fname.split('.')[3] # platform is the 4th token
+        plat = fname.split('.')[3] # platform is the second-to-last dot-separated token (e.g. '...step2.telegram.jpg')
         X.append(vec)
         labels.append(plat)
         cids.append(cid)

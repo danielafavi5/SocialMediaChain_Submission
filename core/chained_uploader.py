@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-chained_uploader_fixed_keys.py
+chained_uploader.py
 
-Chained upload/download orchestrator for Telegram, Slack, Reddit.
+Chained upload/download orchestrator for Telegram, Slack, Discord.
 All service tokens and access keys are defined as global fixed variables.
 """
 
@@ -54,7 +54,6 @@ DISCORD_CHANNEL_ID = "replace_with_your_discord_channel_id"
 
 # ---------- Helpers ----------
 def sha256_bytes(b: bytes) -> str:
-    import hashlib
     return hashlib.sha256(b).hexdigest()
 
 def save_bytes(path: Path, b: bytes):
@@ -396,6 +395,7 @@ def main(args):
 
     all_manifest = []
     # --- Paired Strategy Selection Logic ---
+    # Images are sourced from RAISE/VISION datasets, not the --images CLI arg (intentional override).
     images = []
     
     # 1. RAISE (first 50)

@@ -6,7 +6,7 @@ Forensic platform predictor for JPEG images.
 Pipeline:
   1. Parse --image argument.
   2. Resolve model paths relative to this script (no hard-coded absolute paths).
-  3. Load pre-trained C2 RF model and pruned-feature index from models/.
+  3. Load pre-trained C1 and C2 RF models and pruned-feature index from models/.
   4. Extract 258-dim structural feature vector from the image.
   5. Predict the surface platform via the RF classifier.
   6. Run BKS DQT divisibility trace to detect a prior-platform ghost.
@@ -62,19 +62,21 @@ def _fail(message: str, hint: str = "") -> None:
 # ---------------------------------------------------------------------------
 def load_model(models_dir: str):
     """
-    Load the C2 RF model and its pruned feature index.
+    Load the C1 and C2 RF models and the pruned-feature index.
 
     Args:
         models_dir: Absolute path to the models/ directory.
 
     Returns:
-        Tuple of (sklearn RandomForestClassifier, np.ndarray of valid feature indices).
+        Tuple of (model_c1, model_c2, pruned_indices).
 
     Raises:
         SystemExit(1) if any model file is missing.
     """
-    c2_path     = os.path.join(models_dir, "c2_residual.joblib")
-    
+    c1_path      = os.path.join(models_dir, "c1_surface.joblib")
+    c2_path      = os.path.join(models_dir, "c2_residual.joblib")
+    pruned_path  = os.path.join(models_dir, "pruned_indices.npy")
+
     if not os.path.isfile(c1_path) or not os.path.isfile(c2_path):
         _fail(
             f"Model files missing",
@@ -209,13 +211,6 @@ def main() -> None:
     feat                  = extract_features(args.image)
     surface, confidence, resid = predict(feat, model_c1, model_c2, pruned_indices)
     ghost, ghost_meta     = ghost_trace(feat, surface)
-
-    # Use BKS sequence fusion logic conceptually:
-    import core.bks_fusion as bks_fusion
-    bks = bks_fusion.SequenceAwareBKS(bks_fusion.Q_TABLE_LIBRARY)
-    dqt = feat[LUMA_DQT_SLICE] * LUMA_DQT_SCALE
-    
-    # Let's bypass full sequence fusion for single image and just report C2 output natively instead.
     chain = ([ghost] if ghost else [resid]) + [surface]
 
     # --- Output ---

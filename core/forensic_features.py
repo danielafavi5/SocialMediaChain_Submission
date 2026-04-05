@@ -183,7 +183,7 @@ class ForensicFeatureExtractor:
                 vec[189] = float(np.min(qt_vals)) / 255.0
                 vec[190] = float(np.max(qt_vals)) / 255.0
             else:
-                qt_vals = np.zeros(64, dtype=np.float32) # For L1 dist math
+                qt_vals = np.zeros(64, dtype=np.float32) # Fallback zero vector; used for Q-table L1 distance calculation below
 
             # 5. Chroma Q-table & Stats
             chroma_qt = header["q_tables"].get(1, getattr(img, "quantization", {}).get(1, None))
@@ -247,7 +247,7 @@ class ForensicFeatureExtractor:
             vec[252:258] = q_dist
 
         except Exception as e:
-            # print(e)
+            # Extraction failed silently; caller receives a zero vector.
             pass
 
         return vec
