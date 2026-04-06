@@ -83,6 +83,6 @@ See `research_summary.md` for the full derivation.
 ├── phase7_features_cache.npz Intermediate augmented feature cache
 ├── samples_test_split.json  Strict 201-image testing holdout constraint array
 ├── methodology.md           Data pipeline and feature engineering details
-├── research_summary.md      Forensic Horizon mathematical explanation
+├── research_summary.md      Tracing limitation mathematical explanation
 └── requirements.txt
 ```

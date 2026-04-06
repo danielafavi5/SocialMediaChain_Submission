@@ -5,7 +5,7 @@ This module contains the Sequence-Aware Behavior-Knowledge Space (BKS) Fusion lo
 It resolves conflicts between the primary surface platform classifier (C1 / Q-table match)
 and the deep historical residual classifier (C2_Residual).
 
-It implements the 'Forensic Horizon' safeguards and 'Targeted DQT Backtracking'
+It implements the 'tracing limit' safeguards and 'Targeted DQT Backtracking'
 to actively prevent machine learning prediction collapse during deep sequences.
 """
 

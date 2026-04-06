@@ -156,7 +156,7 @@ def main():
 
     print(f"  C1 surface platform identification (2026) : {c1_f1*100:.1f}% macro-F1")
     print(f"  C2 BKS residual classification (mixed)    : {c2_f1*100:.1f}% macro-F1")
-    print(f"  Raw RF 3-step chain accuracy              : {rf_acc:.1f}%  (Forensic Horizon)")
+    print(f"  Raw RF 3-step chain accuracy              : {rf_acc:.1f}%  (tracing limit)")
     print(f"  BKS Fused chain accuracy                  : {chain_acc:.1f}%")
     print(f"  BKS DQT Rescued Sequences                 : {rescues}")
     print("=" * 60)
