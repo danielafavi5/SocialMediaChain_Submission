@@ -41,7 +41,7 @@ CLASS_NAMES = {0: "telegram", 1: "slack", 2: "discord"}
 # ---------------------------------------------------------------------------
 def _repo_root() -> str:
     """Return the directory that contains this script (repo root)."""
-    return "."
+    return os.path.dirname(os.path.abspath(__file__))
 
 
 def _resolve(*parts: str) -> str:
@@ -139,7 +139,7 @@ def predict(feat: np.ndarray, model_c1, model_c2, pruned_indices) -> tuple[str, 
     pred_class   = int(model_c1.predict(feat_surface)[0])
     probas       = model_c1.predict_proba(feat_surface)[0]
     surface      = CLASS_NAMES.get(pred_class, "unknown")
-    confidence   = float(probas[pred_class]) if pred_class < len(probas) else 0.0
+    confidence   = float(np.max(probas))
 
     feat_resid   = feat[pruned_indices].reshape(1, -1)
     pred_c2      = int(model_c2.predict(feat_resid)[0])
@@ -211,7 +211,7 @@ def main() -> None:
     feat                  = extract_features(args.image)
     surface, confidence, resid = predict(feat, model_c1, model_c2, pruned_indices)
     ghost, ghost_meta     = ghost_trace(feat, surface)
-    chain = ([ghost] if ghost else [resid]) + [surface]
+    chain = ([ghost] if (ghost and surface == "discord") else [resid]) + [surface]
 
     # --- Output ---
     if args.json:
