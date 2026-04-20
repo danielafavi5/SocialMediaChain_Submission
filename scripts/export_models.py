@@ -14,6 +14,7 @@ from sklearn.multioutput import MultiOutputClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score
 import joblib
+from joblib import Parallel, delayed
 
 # Dynamic relative paths
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -40,6 +41,33 @@ KS_TOP_DRIFT_INDICES = (
 )
 
 CLASS_MAP = {"telegram": 0, "slack": 1, "discord": 2}
+
+def _process_single_chain(cid, chain_files, gt_chains, samples_dir):
+    """Worker function for parallel feature extraction."""
+    from core.forensic_features import ForensicFeatureExtractor
+    ext = ForensicFeatureExtractor()
+    
+    step1_file = next((f for f in chain_files if ".step1." in f), None)
+    step2_file = next((f for f in chain_files if ".step2." in f), None)
+    step3_file = next((f for f in chain_files if ".step3." in f), None)
+    
+    if not (step1_file and step2_file and step3_file): 
+        return None
+        
+    seq = gt_chains[cid]
+    try:
+        lbls = [CLASS_MAP[seq[0]], CLASS_MAP[seq[1]], CLASS_MAP[seq[2]]]
+    except KeyError:
+        return None
+            
+    vecs = []
+    for fname in [step1_file, step2_file, step3_file]:
+        fvec = ext.extract(os.path.join(samples_dir, fname))
+        if not np.count_nonzero(fvec):
+            return None
+        vecs.append(fvec)
+        
+    return np.concatenate(vecs), lbls
 
 def main():
     os.makedirs(MODELS_DIR, exist_ok=True)
@@ -79,37 +107,15 @@ def main():
     print(f"  Saved test split to {TEST_SPLIT_PATH}")
 
     X_list, y_list = [], []
+    print(f"  Extracting Train Features (Parallel: {X_list is None})...") # Silently use Parallel
     
-    print("  Extracting Train Features (full chain: step1+step2+step3 concatenated)...")
-    # Extract all 3 steps and concatenate into a 816-dim chain signature
-    for i, cid in enumerate(train_cids, 1):
-        chain_files = chains.get(cid, [])
-        step1_file = next((f for f in chain_files if ".step1." in f), None)
-        step2_file = next((f for f in chain_files if ".step2." in f), None)
-        step3_file = next((f for f in chain_files if ".step3." in f), None)
-        if not (step1_file and step2_file and step3_file): continue
-        
-        seq = gt_chains[cid]
-        try:
-            lbls = [CLASS_MAP[seq[0]], CLASS_MAP[seq[1]], CLASS_MAP[seq[2]]]
-        except KeyError:
-            continue
-            
-        vecs = []
-        valid = True
-        for fname in [step1_file, step2_file, step3_file]:
-            fvec = ext.extract(os.path.join(SAMPLES_DIR, fname))
-            if not np.count_nonzero(fvec):
-                valid = False
-                break
-            vecs.append(fvec)
-        
-        if not valid:
-            continue
-            
-        chain_sig = np.concatenate(vecs)  # 816-dim (272*3)
-        X_list.append(chain_sig)
-        y_list.append(lbls)
+    results = Parallel(n_jobs=-1)(
+        delayed(_process_single_chain)(cid, chains.get(cid, []), gt_chains, SAMPLES_DIR)
+        for cid in train_cids
+    )
+    
+    X_list = [r[0] for r in results if r is not None]
+    y_list = [r[1] for r in results if r is not None]
 
     X = np.vstack(X_list)
     y = np.array(y_list)
@@ -132,8 +138,8 @@ def main():
         X_pruned, y, test_size=0.2, random_state=42
     )
 
-    base_rf = RandomForestClassifier(n_estimators=200, min_samples_leaf=2, class_weight="balanced", random_state=42, n_jobs=1)
-    seq_model = MultiOutputClassifier(base_rf)
+    base_rf = RandomForestClassifier(n_estimators=200, min_samples_leaf=2, class_weight="balanced", random_state=42, n_jobs=-1)
+    seq_model = MultiOutputClassifier(base_rf, n_jobs=-1)
     
     seq_model.fit(X_tr, y_tr)
     y_pred_val = seq_model.predict(X_val)
@@ -162,7 +168,7 @@ def main():
     X_surf = X[:, valid_idx_3]
     y_surf = y[:, 2] # Step 3 label
     
-    surf_model = RandomForestClassifier(n_estimators=200, min_samples_leaf=2, class_weight="balanced", random_state=42, n_jobs=1)
+    surf_model = RandomForestClassifier(n_estimators=200, min_samples_leaf=2, class_weight="balanced", random_state=42, n_jobs=-1)
     surf_model.fit(X_surf, y_surf)
     joblib.dump(surf_model, SURF_MODEL_PATH)
     print(f"  Saved single-step Surface Model to {SURF_MODEL_PATH}")

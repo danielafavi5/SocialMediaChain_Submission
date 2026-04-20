@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import joblib
+from joblib import Parallel, delayed
 import numpy as np
 
 # Dynamic relative paths
@@ -25,6 +26,45 @@ MANIFEST_PATH = os.path.join(BASE_DIR, "manifest.json")
 PRUNED_IDX_PATH = os.path.join(MODELS_DIR, "pruned_indices.npy")
 
 CLASSES = ["telegram", "slack", "discord"]
+
+def _evaluate_single_chain(cid, fnames, gt_chains, samples_dir, seq_model, pruned_idx):
+    """Worker function for parallel chain evaluation."""
+    from core.forensic_features import ForensicFeatureExtractor
+    extractor = ForensicFeatureExtractor()
+    
+    step1_fname = next((f for f in fnames if ".step1." in f), None)
+    step2_fname = next((f for f in fnames if ".step2." in f), None)
+    step3_fname = next((f for f in fnames if ".step3." in f), None)
+    if not (step1_fname and step2_fname and step3_fname): 
+        return None
+        
+    true_seq = gt_chains.get(cid)
+    if not true_seq: 
+        return None
+
+    vecs = []
+    for fname in [step1_fname, step2_fname, step3_fname]:
+        fpath = os.path.join(samples_dir, fname)
+        fvec = extractor.extract(fpath)
+        if not np.count_nonzero(fvec):
+            return None
+        vecs.append(fvec)
+    
+    feat_full = np.concatenate(vecs)
+    feat_input = feat_full[pruned_idx] if pruned_idx is not None else feat_full
+
+    try:
+        pred_idx_seq = seq_model.predict([feat_input])[0]
+        pred_seq = [CLASSES[idx] for idx in pred_idx_seq]
+    except Exception:
+        return None
+
+    return {
+        "cid": cid,
+        "true_seq": true_seq,
+        "pred_seq": pred_seq,
+        "match": true_seq == pred_seq
+    }
 
 def _fail(title: str, msg: str):
     print(f"\n[!] {title}\n    {msg}\n")
@@ -70,7 +110,14 @@ def main():
 
     extractor = ForensicFeatureExtractor()
 
-    print("\nStarting Offline Sequence Evaluation (Unified v2)...")
+    print("\nStarting Parallel Offline Sequence Evaluation (Unified v2)...")
+    
+    results = Parallel(n_jobs=-1)(
+        delayed(_evaluate_single_chain)(cid, fnames, gt_chains, SAMPLES_DIR, seq_model, pruned_idx)
+        for cid, fnames in test_chains.items()
+    )
+    
+    processed_results = [r for r in results if r is not None]
     
     total_chains = 0
     exact_matches = 0
@@ -79,57 +126,18 @@ def main():
     print("\n  [Chain ID]         [True Sequence]                [Predicted Sequence]")
     print("  " + "-"*75)
 
-    for cid, fnames in test_chains.items():
-        step1_fname = next((f for f in fnames if ".step1." in f), None)
-        step2_fname = next((f for f in fnames if ".step2." in f), None)
-        step3_fname = next((f for f in fnames if ".step3." in f), None)
-        if not (step1_fname and step2_fname and step3_fname): continue
-        
-        true_seq = gt_chains.get(cid)
-        if not true_seq: continue
-
-        # 1. Extract and concatenate Step1+Step2+Step3 features into a single 816-dim signature
-        vecs = []
-        valid = True
-        for fname in [step1_fname, step2_fname, step3_fname]:
-            fpath = os.path.join(SAMPLES_DIR, fname)
-            fvec = extractor.extract(fpath)
-            if not np.count_nonzero(fvec):
-                valid = False
-                break
-            vecs.append(fvec)
-        
-        if not valid:
-            continue
-
-        feat_full = np.concatenate(vecs)
-
-        # 2. Apply Adversarial Pruning (masking out drift-prone indices identified by KS test)
-        if pruned_idx is not None:
-            feat_pruned = feat_full[pruned_idx]
-        else:
-            feat_pruned = feat_full
-
-        # 3. Predict the full 3-step sequence simultaneously using the MultiOutput model
-        try:
-            pred_idx_seq = seq_model.predict([feat_pruned])[0]
-            pred_seq = [CLASSES[idx] for idx in pred_idx_seq]
-        except Exception:
-            continue
-
-        # Convert to strings
-        true_str = ">".join(true_seq)
-        pred_str = ">".join(pred_seq)
-        
-        match_flag = "OK" if true_seq == pred_seq else "--"
-        print(f"  {cid[:18]:<18} {true_str:<30} {pred_str:<25} [{match_flag}]")
+    for r in processed_results:
+        true_str = ">".join(r["true_seq"])
+        pred_str = ">".join(r["pred_seq"])
+        match_flag = "OK" if r["match"] else "--"
+        print(f"  {r['cid'][:18]:<18} {true_str:<30} {pred_str:<25} [{match_flag}]")
 
         total_chains += 1
-        if true_seq == pred_seq:
+        if r["match"]:
             exact_matches += 1
             
         for i in range(3):
-            if true_seq[i] == pred_seq[i]:
+            if r["true_seq"][i] == r["pred_seq"][i]:
                 step_correct[i] += 1
 
     print("\n" + "="*60)
