@@ -88,6 +88,7 @@ def main():
         true_seq = gt_chains.get(cid)
         if not true_seq: continue
 
+        # 1. Extract and concatenate Step1+Step2+Step3 features into a single 816-dim signature
         vecs = []
         valid = True
         for fname in [step1_fname, step2_fname, step3_fname]:
@@ -101,18 +102,19 @@ def main():
         if not valid:
             continue
 
-        feat_full = np.concatenate(vecs)  # 816-dim
+        feat_full = np.concatenate(vecs)
 
+        # 2. Apply Adversarial Pruning (masking out drift-prone indices identified by KS test)
         if pruned_idx is not None:
             feat_pruned = feat_full[pruned_idx]
         else:
             feat_pruned = feat_full
 
-        # Predict sequence
+        # 3. Predict the full 3-step sequence simultaneously using the MultiOutput model
         try:
             pred_idx_seq = seq_model.predict([feat_pruned])[0]
             pred_seq = [CLASSES[idx] for idx in pred_idx_seq]
-        except Exception as e:
+        except Exception:
             continue
 
         # Convert to strings

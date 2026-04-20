@@ -4,7 +4,7 @@ forensic_features.py
 Research-grade forensic feature extractor for JPEG images processed through
 social-media compression chains.
 
-Feature vector layout (fixed 258-dimensional NumPy array):
+Feature vector layout (fixed 272-dimensional NumPy array):
   [0:21]    DCT AC histogram bins
   [21:42]   DCT coefficient energy map
   [42:123]  Intra-block Markov transition features (T=4, 81 dims)
@@ -16,8 +16,10 @@ Feature vector layout (fixed 258-dimensional NumPy array):
   [241:247] Structural stats (6 dims)
   [247:252] Double-compression ghost peaks (AC1-AC5 empty bins ratio, 5 dims)
   [252:258] Q-Table Backtracking (L1 distance to 6 standard tables, 6 dims)
+  [258:267] Benford's Law Distribution Analysis (AC leading digit prob, 9 dims)
+  [267:272] Container Byte Analysis (APP0, APP1, DHT structure flags, 5 dims)
 
-Total: 258 dimensions
+Total: 272 dimensions
 """
 
 import numpy as np

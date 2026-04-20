@@ -26,6 +26,7 @@ SAMPLES_DIR = os.path.join(BASE_DIR, "samples")
 MANIFEST_PATH = os.path.join(BASE_DIR, "manifest.json")
 MODELS_DIR = os.path.join(BASE_DIR, "models")
 SEQ_MODEL_PATH = os.path.join(MODELS_DIR, "seq_model.joblib")
+SURF_MODEL_PATH = os.path.join(MODELS_DIR, "surface_model.joblib")
 TEST_SPLIT_PATH = os.path.join(BASE_DIR, "samples_test_split.json")
 CACHE_FILE = os.path.join(BASE_DIR, "unified_sequence_cache.npz")
 PRUNED_IDX_PATH = os.path.join(MODELS_DIR, "pruned_indices.npy")
@@ -150,6 +151,21 @@ def main():
     seq_model.fit(X_pruned, y)
     joblib.dump(seq_model, SEQ_MODEL_PATH)
     print(f"  Saved end-to-end Sequence Model to {SEQ_MODEL_PATH}")
+
+    # Train and Save Surface Model (Single Image Mode)
+    # We train this exclusively on the Step 3 features for analyze_image.py portability
+    # Step 3 features are the last 272 raw dims (indices 544-815)
+    # We must apply the same pruning that was used for those indices
+    q_drift_3 = [x for x in KS_TOP_DRIFT_INDICES if x >= 544]
+    valid_idx_3 = [i for i in range(544, 816) if i not in q_drift_3]
+    
+    X_surf = X[:, valid_idx_3]
+    y_surf = y[:, 2] # Step 3 label
+    
+    surf_model = RandomForestClassifier(n_estimators=200, min_samples_leaf=2, class_weight="balanced", random_state=42, n_jobs=1)
+    surf_model.fit(X_surf, y_surf)
+    joblib.dump(surf_model, SURF_MODEL_PATH)
+    print(f"  Saved single-step Surface Model to {SURF_MODEL_PATH}")
 
 if __name__ == "__main__":
     main()

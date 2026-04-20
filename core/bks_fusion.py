@@ -1,12 +1,12 @@
 """
 bks_fusion.py
 =============
-This module contains the Sequence-Aware Behavior-Knowledge Space (BKS) Fusion logic.
-It resolves conflicts between the primary surface platform classifier (C1 / Q-table match)
-and the deep historical residual classifier (C2_Residual).
+This module contains the Behavior-Knowledge Space (BKS) DQT divisibility logic.
+It provides a deterministic second-opinion for identifying 'ghost' ancestors
+by checking for integer-ratio quantization relationships that survive re-compression.
 
-It implements the 'tracing limit' safeguards and 'Targeted DQT Backtracking'
-to actively prevent machine learning prediction collapse during deep sequences.
+It is used by the single-image analyze_image.py tool to look past the 
+tracing limit on platforms with larger Q-tables (Slack/Telegram).
 """
 
 import numpy as np
@@ -85,7 +85,5 @@ class SequenceAwareBKS:
                 prev_pred_final = div_match
                 
             reconstructed[step_index - 1] = prev_pred_final
-            
-        return reconstructed
             
         return reconstructed
