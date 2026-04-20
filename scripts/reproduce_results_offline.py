@@ -1,165 +1,145 @@
+"""
+reproduce_results_offline.py
+============================
+Offline evaluation script utilizing the Unified Sequence Engine (seq_model.joblib).
+"""
+
 import os
 import sys
 import json
-import numpy as np
 import joblib
-from collections import defaultdict
-from sklearn.metrics import f1_score
+import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# Dynamic relative paths
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 
-from core.forensic_features import ForensicFeatureExtractor, Q_TABLE_LIBRARY
-from core.bks_fusion import SequenceAwareBKS
+from core.forensic_features import ForensicFeatureExtractor
 
-MODELS_DIR    = os.path.join(os.path.dirname(__file__), "..", "models")
-SAMPLES_DIR   = os.path.join(os.path.dirname(__file__), "..", "samples")
-MANIFEST_FILE = os.path.join(os.path.dirname(__file__), "..", "manifest.json")
-SPLIT_FILE    = os.path.join(os.path.dirname(__file__), "..", "samples_test_split.json")
+MODELS_DIR = os.path.join(BASE_DIR, "models")
+SEQ_MODEL_PATH = os.path.join(MODELS_DIR, "seq_model.joblib")
+TEST_SPLIT_PATH = os.path.join(BASE_DIR, "samples_test_split.json")
+SAMPLES_DIR = os.path.join(BASE_DIR, "samples")
+MANIFEST_PATH = os.path.join(BASE_DIR, "manifest.json")
+PRUNED_IDX_PATH = os.path.join(MODELS_DIR, "pruned_indices.npy")
 
-C1_PATH       = os.path.join(MODELS_DIR, "c1_surface.joblib")
-C2_PATH       = os.path.join(MODELS_DIR, "c2_residual.joblib")
-PRUNED_PATH   = os.path.join(MODELS_DIR, "pruned_indices.npy")
+CLASSES = ["telegram", "slack", "discord"]
 
-CLASS_NAMES = {0: "telegram", 1: "slack", 2: "discord"}
-PLATFORM_TO_CLASS = {"telegram": 0, "slack": 1, "discord": 2}
+def _fail(title: str, msg: str):
+    print(f"\n[!] {title}\n    {msg}\n")
+    sys.exit(1)
 
 def main():
-    print("=" * 60)
-    print("  TrueFake Offline Reproducibility Check")
-    print("=" * 60)
+    if not os.path.isfile(SEQ_MODEL_PATH):
+        _fail("Model missing", "Run 'python scripts/export_models.py' first.")
 
-    # 1. Load Models & Pruned Indices
-    if not os.path.exists(C1_PATH) or not os.path.exists(C2_PATH):
-        sys.exit(f"[ERROR] Models not found.\nRun: python export_models.py")
-    
-    c1_model = joblib.load(C1_PATH)
-    c2_model = joblib.load(C2_PATH)
-    pruned_indices = np.load(PRUNED_PATH)
-    print(f"  Models loaded     : {C1_PATH}, {C2_PATH}")
+    try:
+        seq_model = joblib.load(SEQ_MODEL_PATH)
+    except Exception as e:
+        _fail("Model Load Failed", f"Could not load {SEQ_MODEL_PATH}: {e}")
 
-    # 2. Load Ground Truth Manifest
-    if os.path.exists(MANIFEST_FILE):
-        with open(MANIFEST_FILE) as f:
-            manifest = json.load(f)
-        # gt_map: filename -> platform
-        gt_map = {entry["served_filename"]: entry["platform"] for entry in manifest}
-        # gt_chains: chain_id -> sequence list
-        gt_chains = {entry["chain_id"]: entry.get("sequence", []) for entry in manifest}
-    else:
-        gt_map = {}
-        gt_chains = {}
+    pruned_idx = np.load(PRUNED_IDX_PATH) if os.path.isfile(PRUNED_IDX_PATH) else None
 
-    # 3. Load Holdout Test Split
-    if not os.path.exists(SPLIT_FILE):
-        sys.exit(f"[ERROR] Test split not found: {SPLIT_FILE}\nRun: python export_models.py")
-    
-    with open(SPLIT_FILE) as f:
-        test_files = json.load(f)
-    print(f"  Holdout files     : {len(test_files)}")
+    # Load ground truth chains
+    try:
+        with open(MANIFEST_PATH, "r") as mf:
+            manifest = json.load(mf)
+    except FileNotFoundError:
+        _fail("Missing manifest", f"Could not find {MANIFEST_PATH}")
 
-    # 4. Group test files into chains
-    chains = defaultdict(list)
+    gt_chains = {entry["chain_id"]: entry.get("sequence", []) for entry in manifest if entry.get("chain_id") and len(entry.get("sequence", [])) == 3}
+
+    # Load test split
+    try:
+        with open(TEST_SPLIT_PATH, "r") as f:
+            test_files = json.load(f)
+    except FileNotFoundError:
+        _fail("Missing Test Split", f"Could not find {TEST_SPLIT_PATH}")
+
+    # Group test files by chain
+    test_chains = {}
     for fname in test_files:
-        if ".chain_" in fname:
-            base = fname.split('.step')[0]
-            cid = base.split(".chain_")[-1]
-            chains[cid].append(fname)
-
-    # Find full 3-step chains
-    full_chains = []
-    for cid, files in chains.items():
-        if len(files) >= 3:
-            s1 = next((f for f in files if ".step1." in f), None)
-            s2 = next((f for f in files if ".step2." in f), None)
-            s3 = next((f for f in files if ".step3." in f), None)
-            if s1 and s2 and s3:
-                full_chains.append((cid, [s1, s2, s3]))
-
-    print(f"  Full chains to evaluate: {len(full_chains)}\n")
-    print(f"  {'Chain ID':<20} {'GT Seq':<30} {'Pred Seq':<30} {'Rescue?':<10}")
-    print("  " + "-" * 90)
+        try:
+            cid = fname.split(".chain_")[1].split(".step")[0]
+            if cid not in test_chains:
+                test_chains[cid] = []
+            test_chains[cid].append(fname)
+        except Exception:
+            pass
 
     extractor = ForensicFeatureExtractor()
-    bks = SequenceAwareBKS(Q_TABLE_LIBRARY)
 
-    y_true_c1, y_pred_c1 = [], []
-    y_true_c2, y_pred_c2 = [], []
+    print("\nStarting Offline Sequence Evaluation (Unified v2)...")
     
-    chains_correct = 0
-    rf_chains_correct = 0
-    rescues = 0
+    total_chains = 0
+    exact_matches = 0
+    step_correct = {0: 0, 1: 0, 2: 0}
 
-    for cid, fnames in full_chains:
-        surf_preds = []
-        resid_preds = []
-        dqt_arrays = []
-        true_seq = []
+    print("\n  [Chain ID]         [True Sequence]                [Predicted Sequence]")
+    print("  " + "-"*75)
 
-        # Extract features for all steps
-        for step_idx, fname in enumerate(fnames):
+    for cid, fnames in test_chains.items():
+        step1_fname = next((f for f in fnames if ".step1." in f), None)
+        step2_fname = next((f for f in fnames if ".step2." in f), None)
+        step3_fname = next((f for f in fnames if ".step3." in f), None)
+        if not (step1_fname and step2_fname and step3_fname): continue
+        
+        true_seq = gt_chains.get(cid)
+        if not true_seq: continue
+
+        vecs = []
+        valid = True
+        for fname in [step1_fname, step2_fname, step3_fname]:
             fpath = os.path.join(SAMPLES_DIR, fname)
-            feat_full = extractor.extract(fpath)
-            
-            # Surface GT
-            gt_surface = gt_map.get(fname, fname.rsplit(".", 2)[-2])
-            true_seq.append(gt_surface)
-            y_true_c1.append(gt_surface)
-            
-            # --- C1 Surface Prediction ---
-            c1_feat = feat_full[:258].reshape(1, -1)
-            pred_c1_class = int(c1_model.predict(c1_feat)[0])
-            c1_str = CLASS_NAMES.get(pred_c1_class, "unknown")
-            surf_preds.append(c1_str)
-            y_pred_c1.append(c1_str)
-            
-            # --- C2 Residual Prediction ---
-            # The Residual GT is the prior platform (step_idx - 1)
-            # If step 1, there is no prior platform theoretically, but we extract anyway
-            c2_feat = feat_full[pruned_indices].reshape(1, -1)
-            pred_c2_class = int(c2_model.predict(c2_feat)[0])
-            c2_str = CLASS_NAMES.get(pred_c2_class, "unknown")
-            resid_preds.append(c2_str)
-            
-            if step_idx > 0:
-                y_true_c2.append(true_seq[step_idx - 1])
-                y_pred_c2.append(c2_str)
-                
-            # DQT extraction
-            dqt = feat_full[123:187] * 255.0
-            dqt_arrays.append(dqt)
-
-        # Apply BKS Fusion
-        fused_seq = bks.fuse_sequence(surf_preds, resid_preds, dqt_arrays)
+            fvec = extractor.extract(fpath)
+            if not np.count_nonzero(fvec):
+                valid = False
+                break
+            vecs.append(fvec)
         
-        # Determine 3-step accuracy logic
-        is_fused_correct = (fused_seq == true_seq)
-        is_rf_correct = (surf_preds == true_seq)
+        if not valid:
+            continue
+
+        feat_full = np.concatenate(vecs)  # 816-dim
+
+        if pruned_idx is not None:
+            feat_pruned = feat_full[pruned_idx]
+        else:
+            feat_pruned = feat_full
+
+        # Predict sequence
+        try:
+            pred_idx_seq = seq_model.predict([feat_pruned])[0]
+            pred_seq = [CLASSES[idx] for idx in pred_idx_seq]
+        except Exception as e:
+            continue
+
+        # Convert to strings
+        true_str = ">".join(true_seq)
+        pred_str = ">".join(pred_seq)
         
-        if is_fused_correct: chains_correct += 1
-        if is_rf_correct: rf_chains_correct += 1
-        
-        rescue_str = ""
-        if (not is_rf_correct) and is_fused_correct:
-            rescues += 1
-            rescue_str = "RESCUE"
+        match_flag = "OK" if true_seq == pred_seq else "--"
+        print(f"  {cid[:18]:<18} {true_str:<30} {pred_str:<25} [{match_flag}]")
+
+        total_chains += 1
+        if true_seq == pred_seq:
+            exact_matches += 1
             
-        print(f"  {cid[:18]:<20} {'>'.join(true_seq):<30} {'>'.join(fused_seq):<30} {rescue_str:<10}")
+        for i in range(3):
+            if true_seq[i] == pred_seq[i]:
+                step_correct[i] += 1
 
-    print("\n" + "=" * 60)
-    # Calculate Macro-F1
-    c1_f1 = f1_score(y_true_c1, y_pred_c1, average="macro") if y_true_c1 else 0.0
-    c2_f1 = f1_score(y_true_c2, y_pred_c2, average="macro") if y_true_c2 else 0.0
-    
-    # Using 0.0% for RF Chain Accuracy to match paper's boundary statement (or actual if somehow correct)
-    chain_acc = (chains_correct / len(full_chains)) * 100 if full_chains else 0
-    rf_acc = (rf_chains_correct / len(full_chains)) * 100 if full_chains else 0
-
-    print(f"  C1 surface platform identification (2026) : {c1_f1*100:.1f}% macro-F1")
-    print(f"  C2 BKS residual classification (mixed)    : {c2_f1*100:.1f}% macro-F1")
-    print(f"  Raw RF 3-step chain accuracy              : {rf_acc:.1f}%  (tracing limit)")
-    print(f"  BKS Fused chain accuracy                  : {chain_acc:.1f}%")
-    print(f"  BKS DQT Rescued Sequences                 : {rescues}")
-    print("=" * 60)
+    print("\n" + "="*60)
+    if total_chains > 0:
+        print(f"  Total Chains Evaluated: {total_chains}")
+        print(f"  Step 1 Accuracy     : {step_correct[0]/total_chains * 100:.1f}%")
+        print(f"  Step 2 Accuracy     : {step_correct[1]/total_chains * 100:.1f}%")
+        print(f"  Step 3 Accuracy     : {step_correct[2]/total_chains * 100:.1f}%")
+        print(f"  Exact Sequence Match: {exact_matches/total_chains * 100:.1f}%")
+    else:
+        print("  No chains evaluated.")
+    print("="*60 + "\n")
 
 if __name__ == "__main__":
     main()

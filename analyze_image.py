@@ -1,14 +1,14 @@
 """
 analyze_image.py
 ================
-Forensic platform predictor for JPEG images.
+Forensic platform predictor for a single JPEG image.
 
 Pipeline:
   1. Parse --image argument.
   2. Resolve model paths relative to this script (no hard-coded absolute paths).
-  3. Load pre-trained C1 and C2 RF models and pruned-feature index from models/.
-  4. Extract 258-dim structural feature vector from the image.
-  5. Predict the surface platform via the RF classifier.
+  3. Load the pre-trained Unified Sequence Model and pruned-feature index from models/.
+  4. Extract the 272-dim structural feature vector from the image.
+  5. Predict the surface platform (Step 3 position) from the feature vector.
   6. Run BKS DQT divisibility trace to detect a prior-platform ghost.
   7. Print results; exit with code 0 on success, 1 on any failure.
 
@@ -62,36 +62,34 @@ def _fail(message: str, hint: str = "") -> None:
 # ---------------------------------------------------------------------------
 def load_model(models_dir: str):
     """
-    Load the C1 and C2 RF models and the pruned-feature index.
+    Load the Unified Sequence Model and the pruned-feature index.
 
     Args:
         models_dir: Absolute path to the models/ directory.
 
     Returns:
-        Tuple of (model_c1, model_c2, pruned_indices).
+        Tuple of (seq_model, pruned_indices).
 
     Raises:
         SystemExit(1) if any model file is missing.
     """
-    c1_path      = os.path.join(models_dir, "c1_surface.joblib")
-    c2_path      = os.path.join(models_dir, "c2_residual.joblib")
+    seq_path     = os.path.join(models_dir, "seq_model.joblib")
     pruned_path  = os.path.join(models_dir, "pruned_indices.npy")
 
-    if not os.path.isfile(c1_path) or not os.path.isfile(c2_path):
+    if not os.path.isfile(seq_path):
         _fail(
-            f"Model files missing",
-            "Run  python export_models.py  to generate the model artifacts.",
+            "Model files missing",
+            "Run  python run_all.py  to train the model and generate all artifacts.",
         )
     if not os.path.isfile(pruned_path):
         _fail(
             f"Pruning index not found: {pruned_path}",
-            "Run  python export_models.py  to regenerate all model artifacts.",
+            "Run  python run_all.py  to regenerate all model artifacts.",
         )
 
-    model_c1       = joblib.load(c1_path)
-    model_c2       = joblib.load(c2_path)
+    seq_model      = joblib.load(seq_path)
     pruned_indices = np.load(pruned_path)
-    return model_c1, model_c2, pruned_indices
+    return seq_model, pruned_indices
 
 
 # ---------------------------------------------------------------------------
@@ -128,24 +126,34 @@ def extract_features(image_path: str):
 # ---------------------------------------------------------------------------
 # Prediction
 # ---------------------------------------------------------------------------
-def predict(feat: np.ndarray, model_c1, model_c2, pruned_indices) -> tuple[str, float, str]:
+def predict(feat: np.ndarray, seq_model, pruned_indices) -> tuple[str, float]:
     """
-    Run C1 for surface and C2 for residual classification.
+    Predict the surface platform (Step 3) from a single image's feature vector.
+
+    The Unified Sequence Model was trained on 816-dim chain signatures
+    (step1 + step2 + step3 concatenated). For a single image we only have
+    one 272-dim vector, so we tile it three times to fill the expected input
+    shape and then read only the Step 3 (index 2) output.
 
     Returns:
-        (surface_platform, confidence, residual_platform)
+        (surface_platform, confidence)
     """
-    feat_surface = feat[:258].reshape(1, -1)
-    pred_class   = int(model_c1.predict(feat_surface)[0])
-    probas       = model_c1.predict_proba(feat_surface)[0]
-    surface      = CLASS_NAMES.get(pred_class, "unknown")
-    confidence   = float(np.max(probas))
+    feat_pruned_single = feat[pruned_indices % 272]  # 272-dim pruned
+    # Tile to approximate an 816-dim signature using the single image's features
+    raw_816 = np.concatenate([feat, feat, feat])  # fill all 3 step positions
+    pruned_816 = raw_816[pruned_indices]
+    preds = seq_model.predict([pruned_816])[0]     # [step1, step2, step3]
+    surface_idx = int(preds[2])
+    surface = CLASS_NAMES.get(surface_idx, "unknown")
 
-    feat_resid   = feat[pruned_indices].reshape(1, -1)
-    pred_c2      = int(model_c2.predict(feat_resid)[0])
-    resid        = CLASS_NAMES.get(pred_c2, "unknown")
+    # Use per-estimator class probabilities for Step 3 estimator
+    try:
+        probas = seq_model.estimators_[2].predict_proba([pruned_816[len(pruned_816)//3*2:]])[0]
+        confidence = float(np.max(probas))
+    except Exception:
+        confidence = 1.0
 
-    return surface, confidence, resid
+    return surface, confidence
 
 
 def ghost_trace(feat: np.ndarray, surface_platform: str) -> tuple[str | None, dict | None]:
@@ -207,11 +215,11 @@ def main() -> None:
     models_dir = _resolve("models")
 
     # --- Pipeline ---
-    model_c1, model_c2, pruned_indices = load_model(models_dir)
-    feat                  = extract_features(args.image)
-    surface, confidence, resid = predict(feat, model_c1, model_c2, pruned_indices)
-    ghost, ghost_meta     = ghost_trace(feat, surface)
-    chain = ([ghost] if (ghost and surface == "discord") else [resid]) + [surface]
+    seq_model, pruned_indices = load_model(models_dir)
+    feat                      = extract_features(args.image)
+    surface, confidence       = predict(feat, seq_model, pruned_indices)
+    ghost, ghost_meta         = ghost_trace(feat, surface)
+    chain = ([ghost] if (ghost and surface == "discord") else ["unknown"]) + [surface]
 
     # --- Output ---
     if args.json:

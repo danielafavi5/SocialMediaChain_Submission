@@ -42,7 +42,7 @@ ZIGZAG_ORDER = [
 ]
 AC_ZIGZAG = ZIGZAG_ORDER[1:22]
 
-FEATURE_DIM = 258
+FEATURE_DIM = 272
 
 Q_TABLE_LIBRARY = {
     '2024 Facebook': np.array([4, 3, 3, 4, 3, 3, 4, 4, 3, 4, 5, 4, 4, 5, 6, 10, 7, 6, 6, 6, 6, 13, 9, 10, 8, 10, 15, 13, 16, 16, 15, 13, 15, 14, 17, 19, 24, 20, 17, 18, 23, 18, 14, 15, 21, 28, 21, 23, 25, 25, 27, 27, 27, 16, 20, 29, 31, 29, 26, 31, 24, 26, 27, 26], dtype=np.float32),
@@ -64,7 +64,7 @@ def _dct_matrix_8():
 _DCT_MATRIX = _dct_matrix_8()
 
 def _parse_jpeg_header(path: str) -> dict:
-    info = {"q_tables": {}, "is_progressive": False, "width": 0, "height": 0}
+    info = {"q_tables": {}, "is_progressive": False, "width": 0, "height": 0, "markers_seen": []}
     try:
         with open(path, "rb") as f:
             data = f.read()
@@ -76,6 +76,9 @@ def _parse_jpeg_header(path: str) -> dict:
                 i += 1
                 continue
             marker = data[i:i+2]
+            if marker not in info["markers_seen"]:
+                if marker in [b'\xff\xe0', b'\xff\xe1', b'\xff\xdb', b'\xff\xc4']:
+                    info["markers_seen"].append(marker)
             i += 2
             if marker == b'\xff\xd9': break
             if marker in (b'\xff\xd8', b'\xff\x01'): continue
@@ -246,6 +249,31 @@ class ForensicFeatureExtractor:
                 q_dist[i] = l1 / (64.0 * 255.0)
             vec[252:258] = q_dist
 
+            # 10. First-Digit Benford's Law (AC coeff 1-9)
+            ac_coeffs = dct_blocks[:, [u for u, v in AC_ZIGZAG], [v for u, v in AC_ZIGZAG]].flatten()
+            ac_nonzero = np.abs(ac_coeffs[np.abs(ac_coeffs) >= 1])
+            benford = np.zeros(9, dtype=np.float32)
+            if len(ac_nonzero) > 0:
+                first_digits = np.array([int(str(int(c))[0]) for c in ac_nonzero])
+                hist, _ = np.histogram(first_digits, bins=np.arange(1, 11))
+                benford = hist.astype(np.float32) / len(ac_nonzero)
+            vec[258:267] = benford
+
+            # 11. Container Flags (APP0, APP1, DHT structure)
+            m_seen = header.get("markers_seen", [])
+            has_app0 = 1.0 if b'\xff\xe0' in m_seen else 0.0
+            has_app1 = 1.0 if b'\xff\xe1' in m_seen else 0.0
+            has_dht  = 1.0 if b'\xff\xc4' in m_seen else 0.0
+            
+            # Order tracking
+            dqt_before_dht = 0.0
+            if b'\xff\xdb' in m_seen and b'\xff\xc4' in m_seen:
+                dqt_before_dht = 1.0 if m_seen.index(b'\xff\xdb') < m_seen.index(b'\xff\xc4') else 0.0
+                
+            has_dht_before_dqt = 1.0 if (b'\xff\xc4' in m_seen and b'\xff\xdb' in m_seen and m_seen.index(b'\xff\xc4') < m_seen.index(b'\xff\xdb')) else 0.0
+
+            vec[267:272] = [has_app0, has_app1, has_dht, dqt_before_dht, has_dht_before_dqt]
+
         except Exception as e:
             # Extraction failed silently; caller receives a zero vector.
             pass
@@ -277,5 +305,7 @@ class ForensicFeatureExtractor:
             "qdist_24FB", "qdist_24FL", "qdist_24TW",
             "qdist_26TG", "qdist_26SL", "qdist_26DC"
         ]
+        for i in range(1, 10): names.append(f"benford_digit_{i}")
+        names += ["has_app0", "has_app1", "has_dht", "dqt_before_dht", "dht_before_dqt"]
         assert len(names) == FEATURE_DIM, f"Count {len(names)} != {FEATURE_DIM}"
         return names

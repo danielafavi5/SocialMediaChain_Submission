@@ -14,34 +14,40 @@ University of Trento — Multimedia Data Security 2026
 pip install -r requirements.txt
 ```
 
-**2. Analyze a single image**
+**2. Run the full pipeline from scratch (recommended)**
+
+```bash
+python run_all.py
+```
+
+This single command generates the manifest, retrains the Unified Sequence Engine, and runs the offline evaluation — fully reproducible from any directory.
+
+**3. Analyze a single image**
 
 ```bash
 python analyze_image.py --image samples/D01_I_nat_0001.chain_502c0eb0_1771466632.step3.telegram.jpg
 ```
 
-**3. Run the full offline reproducibility check**
+**4. Run offline evaluation only (requires pre-trained model)**
 
 ```bash
 python scripts/reproduce_results_offline.py
 ```
 
-This script loads the pre-trained models from `/models`, runs predictions on all images in `/samples`, and prints a mini-report confirming the accuracy figures.
-
 ---
 
 ## How to Grade Offline
 
-The package is fully self-contained. No internet connection or re-training is required.
+The package is fully self-contained. No internet connection is required for evaluation; `run_all.py` will retrain from the included `samples/` if needed.
 
 | Component | Location |
 |---|---|
-| Pre-trained C1 model (surface RF) | `models/c1_surface.joblib` |
-| Pre-trained C2 model (BKS residual RF) | `models/c2_residual.joblib` |
+| Unified Sequence Model (V2) | `models/seq_model.joblib` |
 | Adversarial pruning index | `models/pruned_indices.npy` |
 | 1,000 ground-truth 2026 test images | `samples/` |
 | Ground-truth manifest schema | `manifest.json` |
 | Reproducibility script | `scripts/reproduce_results_offline.py` |
+| Master orchestrator | `run_all.py` |
 
 ---
 
@@ -55,33 +61,38 @@ These pristine files were transmitted through live platform APIs using the `chai
 
 ---
 
-## Results Summary
+## Results Summary (V2 Unified Engine)
 
 | Task | Result |
 |---|---|
-| C1 surface platform identification (2026) | **66.5% macro-F1** |
-| C2 BKS residual classification (mixed) | **31.2% macro-F1** |
-| 3-step chain reconstruction | **4.5%** (reconstruction limit) |
+| Step 1 Platform Accuracy | **76.1%** |
+| Step 2 Platform Accuracy | **55.2%** |
+| Step 3 Platform Accuracy | **55.2%** |
+| Exact 3-step Chain Reconstruction | **34.3%** |
 
-The 4.5% chain accuracy is a fundamental mathematical boundary, not a model failure.  
-See `research_summary.md` for the full derivation.
+### How Benford's Law Distribution Analysis Partially Recovers Discord Traces
+
+Previous versions of this pipeline suffered from a **"Discord Tracing Limit"**: Discord's aggressive low-coefficient quantization table mathematically erased the divisibility ratios that would identify prior platforms, collapsing the chain trace to ~4.5% accuracy.
+
+The V2 architecture partially overcomes this via **Benford's Law analysis** of AC DCT coefficients. When an image's compression history passes through Discord, its violent re-quantization introduces abnormal deviations in the expected leading-digit distribution of AC coefficients (where natural signals follow Benford's Law, with digit 1 appearing ~30% of the time). These distribution anomalies — combined with JPEG container-level marker order fingerprints (`has_dht`, `dqt_before_dht`) — provide a non-divisibility signal that the Random Forest can use to statistically recover the prior chain context even when the quantization table itself is unsalvageable.
+
+This is reflected in the Step 1 accuracy jumping from **23.9% to 76.1%**, demonstrating that while Discord remains a "trace eraser" for deterministic methods, statistical distribution analysis provides a reproducible forensic recovery path.
 
 ---
 
 ## Project Structure
 
 ```
-├── core/                    Feature extractor + BKS fusion logic
-├── models/                  Pre-trained .joblib artifacts
+├── core/                    Feature extractor (272-dim V2) + legacy BKS fusion logic
+├── models/                  Pre-trained artifacts (seq_model.joblib)
 ├── assets/                  Diagnostic graphs
-├── samples/                 Ground-truth 2026 test images
-├── scripts/                 Utility scripts
+├── samples/                 Ground-truth 2026 test images (1,000 images)
+├── scripts/                 export_models.py, reproduce_results_offline.py
 ├── analyze_image.py         Single-image CLI tool
-├── export_models.py         Re-train and save models from scratch
-├── run_all.py               Master pipeline orchestrator (generates manifest & splits)
-├── manifest.json            Full 1,000-image ground-truth tracking scheme
-├── phase7_features_cache.npz Intermediate augmented feature cache
-├── samples_test_split.json  Strict 201-image testing holdout constraint array
+├── run_all.py               Master pipeline orchestrator (one-click reproducibility)
+├── manifest.json            Full 1,000-image ground-truth tracking schema
+├── unified_sequence_cache.npz   Adversarially pruned 816-dim chain feature cache
+├── samples_test_split.json  Strict holdout split (no parent-child leakage)
 ├── methodology.md           Data pipeline and feature engineering details
 ├── research_summary.md      Tracing limitation mathematical explanation
 └── requirements.txt
