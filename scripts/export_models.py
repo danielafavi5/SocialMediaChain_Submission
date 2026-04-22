@@ -10,7 +10,7 @@ import sys
 import json
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.multioutput import MultiOutputClassifier
+from sklearn.multioutput import ClassifierChain
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score
 import joblib
@@ -31,14 +31,6 @@ SURF_MODEL_PATH = os.path.join(MODELS_DIR, "surface_model.joblib")
 TEST_SPLIT_PATH = os.path.join(BASE_DIR, "samples_test_split.json")
 CACHE_FILE = os.path.join(BASE_DIR, "unified_sequence_cache.npz")
 PRUNED_IDX_PATH = os.path.join(MODELS_DIR, "pruned_indices.npy")
-
-# Adversarial pruning: 15 volatile features per step, applied to all 3 steps in the 816-dim chain vector
-_DRIFT_BASE = [225, 224, 138, 139, 145, 150, 152, 142, 143, 156, 126, 127, 128, 129, 130]
-KS_TOP_DRIFT_INDICES = (
-    _DRIFT_BASE +
-    [x + 272 for x in _DRIFT_BASE] +
-    [x + 544 for x in _DRIFT_BASE]
-)
 
 CLASS_MAP = {"telegram": 0, "slack": 1, "discord": 2}
 
@@ -105,41 +97,44 @@ def main():
     with open(TEST_SPLIT_PATH, "w") as f:
         json.dump(test_files, f, indent=2)
     print(f"  Saved test split to {TEST_SPLIT_PATH}")
-
-    X_list, y_list = [], []
-    print(f"  Extracting Train Features (Parallel: {X_list is None})...") # Silently use Parallel
+    if os.path.exists(CACHE_FILE):
+        print(f"  [CACHE] Loading pre-extracted Unified features from {CACHE_FILE}")
+        data = np.load(CACHE_FILE)
+        X_pruned = data['X_train']
+        y = data['y_seq_labels']
+    else:
+        print("  Extracting Train Features (full chain: step1+step2+step3 concatenated)...")
+        # Extract all 3 steps and concatenate into a 816-dim chain signature
+        # Silently use Parallel
+        
+        results = Parallel(n_jobs=-1)(
+            delayed(_process_single_chain)(cid, chains.get(cid, []), gt_chains, SAMPLES_DIR)
+            for cid in train_cids
+        )
+        
+        X_list = [r[0] for r in results if r is not None]
+        y_list = [r[1] for r in results if r is not None]
     
-    results = Parallel(n_jobs=-1)(
-        delayed(_process_single_chain)(cid, chains.get(cid, []), gt_chains, SAMPLES_DIR)
-        for cid in train_cids
-    )
+        X = np.vstack(X_list)
+        y = np.array(y_list)
+        
+        feat_dim = X.shape[1]
+        print(f"  Samples used: {X.shape[0]} | Feature dims (raw): {feat_dim}")
     
-    X_list = [r[0] for r in results if r is not None]
-    y_list = [r[1] for r in results if r is not None]
-
-    X = np.vstack(X_list)
-    y = np.array(y_list)
+        # Pruning removed as Q-table features are now consistently ordered
+        X_pruned = X
     
-    feat_dim = X.shape[1]
-    print(f"  Samples used: {X.shape[0]} | Feature dims (raw): {feat_dim}")
-
-    # Adversarial Pruning implementation guardrail
-    valid_indices = [i for i in range(feat_dim) if i not in KS_TOP_DRIFT_INDICES]
-    X_pruned = X[:, valid_indices]
-    np.save(PRUNED_IDX_PATH, np.array(valid_indices))
-    print(f"  Pruned adversarial elements to: {X_pruned.shape[1]} dimensions")
-
-    # Cache Naming Convention Guardrail
-    np.savez_compressed(CACHE_FILE, X_train=X_pruned, y_seq_labels=y)
-    print(f"  Saved unified cache to {CACHE_FILE}")
+        # Cache Naming Convention Guardrail
+        np.savez_compressed(CACHE_FILE, X_train=X_pruned, y_seq_labels=y)
+        print(f"  Saved unified cache to {CACHE_FILE}")
 
     # Train Seq2Seq Model
     X_tr, X_val, y_tr, y_val = train_test_split(
         X_pruned, y, test_size=0.2, random_state=42
     )
 
-    base_rf = RandomForestClassifier(n_estimators=200, min_samples_leaf=2, class_weight="balanced", random_state=42, n_jobs=-1)
-    seq_model = MultiOutputClassifier(base_rf, n_jobs=-1)
+    base_rf = RandomForestClassifier(n_estimators=500, min_samples_leaf=1, max_features=0.2, class_weight="balanced", random_state=42, n_jobs=-1)
+    seq_model = ClassifierChain(base_rf, order=[0, 1, 2], cv=5)
     
     seq_model.fit(X_tr, y_tr)
     y_pred_val = seq_model.predict(X_val)
@@ -161,14 +156,11 @@ def main():
     # Train and Save Surface Model (Single Image Mode)
     # We train this exclusively on the Step 3 features for analyze_image.py portability
     # Step 3 features are the last 272 raw dims (indices 544-815)
-    # We must apply the same pruning that was used for those indices
-    q_drift_3 = [x for x in KS_TOP_DRIFT_INDICES if x >= 544]
-    valid_idx_3 = [i for i in range(544, 816) if i not in q_drift_3]
     
-    X_surf = X[:, valid_idx_3]
+    X_surf = X_pruned[:, 544:] if X_pruned.shape[1] == 816 else X_pruned
     y_surf = y[:, 2] # Step 3 label
     
-    surf_model = RandomForestClassifier(n_estimators=200, min_samples_leaf=2, class_weight="balanced", random_state=42, n_jobs=-1)
+    surf_model = RandomForestClassifier(n_estimators=500, min_samples_leaf=1, max_features=0.2, class_weight="balanced", random_state=42, n_jobs=-1)
     surf_model.fit(X_surf, y_surf)
     joblib.dump(surf_model, SURF_MODEL_PATH)
     print(f"  Saved single-step Surface Model to {SURF_MODEL_PATH}")

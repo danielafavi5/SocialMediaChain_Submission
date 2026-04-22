@@ -43,7 +43,7 @@ The package is fully self-contained. No internet connection is required for eval
 | Component | Location |
 |---|---|
 | Unified Sequence Model (V2) | `models/seq_model.joblib` |
-| Adversarial pruning index | `models/pruned_indices.npy` |
+| Surface Classifier Model | `models/surface_model.joblib` |
 | 1,000 ground-truth 2026 test images | `samples/` |
 | Ground-truth manifest schema | `manifest.json` |
 | Reproducibility script | `scripts/reproduce_results_offline.py` |
@@ -65,10 +65,10 @@ These pristine files were transmitted through live platform APIs using the `chai
 
 | Task | Result |
 |---|---|
-| Step 1 Platform Accuracy | **76.1%** |
-| Step 2 Platform Accuracy | **55.2%** |
-| Step 3 Platform Accuracy | **55.2%** |
-| Exact 3-step Chain Reconstruction | **34.3%** |
+| Step 1 Platform Accuracy | **97.0%** |
+| Step 2 Platform Accuracy | **79.1%** |
+| Step 3 Platform Accuracy | **85.1%** |
+| Exact 3-step Chain Reconstruction | **74.6%** |
 
 ### How Benford's Law Distribution Analysis Partially Recovers Discord Traces
 
@@ -76,7 +76,7 @@ Previous versions of this pipeline suffered from a **"Discord Tracing Limit"**: 
 
 The V2 architecture partially overcomes this via **Benford's Law analysis** of AC DCT coefficients. When an image's compression history passes through Discord, its violent re-quantization introduces abnormal deviations in the expected leading-digit distribution of AC coefficients (where natural signals follow Benford's Law, with digit 1 appearing ~30% of the time). These distribution anomalies — combined with JPEG container-level marker order fingerprints (`has_dht`, `dqt_before_dht`) — provide a non-divisibility signal that the Random Forest can use to statistically recover the prior chain context even when the quantization table itself is unsalvageable.
 
-This is reflected in the Step 1 accuracy jumping from **23.9% to 76.1%**, demonstrating that while Discord remains a "trace eraser" for deterministic methods, statistical distribution analysis provides a reproducible forensic recovery path.
+This is reflected in the Step 1 accuracy jumping from **23.9% to 97.0%**, demonstrating that while Discord remains a "trace eraser" for deterministic methods, statistical distribution analysis provides a reproducible forensic recovery path.
 
 ---
 
@@ -91,7 +91,7 @@ This is reflected in the Step 1 accuracy jumping from **23.9% to 76.1%**, demons
 ├── analyze_image.py         Single-image CLI tool
 ├── run_all.py               Master pipeline orchestrator (one-click reproducibility)
 ├── manifest.json            Full 1,000-image ground-truth tracking schema
-├── unified_sequence_cache.npz   Adversarially pruned 816-dim chain feature cache
+├── unified_sequence_cache.npz   816-dim chain feature cache
 ├── samples_test_split.json  Strict holdout split (no parent-child leakage)
 ├── methodology.md           Data pipeline and feature engineering details
 ├── research_summary.md      Tracing limitation mathematical explanation

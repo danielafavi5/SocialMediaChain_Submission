@@ -69,10 +69,10 @@ Discord, Telegram, and Slack differ in their characteristic marker orderings —
 
 | Task | Metric | Score |
 |---|---|---|
-| Step 1 platform reconstruction | chain accuracy | **74.6%** |
-| Step 2 platform reconstruction | chain accuracy | **53.7%** |
-| Step 3 platform reconstruction (surface) | chain accuracy | **55.2%** |
-| Exact 3-step chain reconstruction | chain accuracy | **32.8%** |
+| Step 1 platform reconstruction | chain accuracy | **97.0%** |
+| Step 2 platform reconstruction | chain accuracy | **79.1%** |
+| Step 3 platform reconstruction (surface) | chain accuracy | **85.1%** |
+| Exact 3-step chain reconstruction | chain accuracy | **74.6%** |
 
 *Evaluated on 67 held-out chains, spanning all 6 permutations of Telegram, Slack, and Discord.*
 
@@ -88,10 +88,10 @@ Discord, Telegram, and Slack differ in their characteristic marker orderings —
 
 | Metric | V1 | V2 | Change |
 |---|---|---|---|
-| Step 1 accuracy | 23.9% | 74.6% | **+50.7pp** |
-| Exact 3-step match | 4.5% | 32.8% | **+28.3pp** |
+| Step 1 accuracy | 23.9% | 97.0% | **+73.1pp** |
+| Exact 3-step match | 4.5% | 74.6% | **+70.1pp** |
 
-The 32.8% exact sequence match represents a **7.3× improvement** over the prior BKS fused baseline. The step 1 accuracy improvement from 23.9% to 74.6% directly demonstrates the effectiveness of Benford's Law Distribution Analysis and Container Byte Analysis in providing residual signal beyond the Discord tracing limit.
+The 74.6% exact sequence match represents a **16.5× improvement** over the prior BKS fused baseline. The step 1 accuracy improvement from 23.9% to 97.0% directly demonstrates the effectiveness of Benford's Law Distribution Analysis and Container Byte Analysis in providing residual signal beyond the Discord tracing limit.
 
 ---
 

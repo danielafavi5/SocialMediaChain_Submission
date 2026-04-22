@@ -23,11 +23,10 @@ SEQ_MODEL_PATH = os.path.join(MODELS_DIR, "seq_model.joblib")
 TEST_SPLIT_PATH = os.path.join(BASE_DIR, "samples_test_split.json")
 SAMPLES_DIR = os.path.join(BASE_DIR, "samples")
 MANIFEST_PATH = os.path.join(BASE_DIR, "manifest.json")
-PRUNED_IDX_PATH = os.path.join(MODELS_DIR, "pruned_indices.npy")
 
 CLASSES = ["telegram", "slack", "discord"]
 
-def _evaluate_single_chain(cid, fnames, gt_chains, samples_dir, seq_model, pruned_idx):
+def _evaluate_single_chain(cid, fnames, gt_chains, samples_dir, seq_model):
     """Worker function for parallel chain evaluation."""
     from core.forensic_features import ForensicFeatureExtractor
     extractor = ForensicFeatureExtractor()
@@ -50,11 +49,10 @@ def _evaluate_single_chain(cid, fnames, gt_chains, samples_dir, seq_model, prune
             return None
         vecs.append(fvec)
     
-    feat_full = np.concatenate(vecs)
-    feat_input = feat_full[pruned_idx] if pruned_idx is not None else feat_full
+    feat_input = np.concatenate(vecs)
 
     try:
-        pred_idx_seq = seq_model.predict([feat_input])[0]
+        pred_idx_seq = seq_model.predict([feat_input])[0].astype(int)
         pred_seq = [CLASSES[idx] for idx in pred_idx_seq]
     except Exception:
         return None
@@ -78,8 +76,6 @@ def main():
         seq_model = joblib.load(SEQ_MODEL_PATH)
     except Exception as e:
         _fail("Model Load Failed", f"Could not load {SEQ_MODEL_PATH}: {e}")
-
-    pruned_idx = np.load(PRUNED_IDX_PATH) if os.path.isfile(PRUNED_IDX_PATH) else None
 
     # Load ground truth chains
     try:
@@ -113,7 +109,7 @@ def main():
     print("\nStarting Parallel Offline Sequence Evaluation (Unified v2)...")
     
     results = Parallel(n_jobs=-1)(
-        delayed(_evaluate_single_chain)(cid, fnames, gt_chains, SAMPLES_DIR, seq_model, pruned_idx)
+        delayed(_evaluate_single_chain)(cid, fnames, gt_chains, SAMPLES_DIR, seq_model)
         for cid, fnames in test_chains.items()
     )
     

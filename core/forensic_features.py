@@ -98,11 +98,17 @@ def _parse_jpeg_header(path: str) -> dict:
                     j += 1
                     table_bytes = 64 if precision == 0 else 128
                     if precision == 0:
-                        qt = np.array(list(segment[j:j+table_bytes]), dtype=np.float32)
+                        qt_zz = np.array(list(segment[j:j+table_bytes]), dtype=np.float32)
                     else:
-                        qt = np.array([struct.unpack(">H", segment[j+k*2:j+k*2+2])[0] for k in range(64)], dtype=np.float32)
+                        qt_zz = np.array([struct.unpack(">H", segment[j+k*2:j+k*2+2])[0] for k in range(64)], dtype=np.float32)
                     j += table_bytes
-                    info["q_tables"][table_id] = qt
+                    
+                    # Un-zigzag it into natural grid order to match PIL and Q_TABLE_LIBRARY
+                    qt_nat = np.zeros(64, dtype=np.float32)
+                    for idx, (u, v) in enumerate(ZIGZAG_ORDER):
+                        qt_nat[u*8 + v] = qt_zz[idx]
+                        
+                    info["q_tables"][table_id] = qt_nat
             elif marker == b'\xff\xc0':
                 if len(segment) >= 5:
                     info["height"] = struct.unpack(">H", segment[1:3])[0]

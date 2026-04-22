@@ -74,22 +74,15 @@ def load_model(models_dir: str):
         SystemExit(1) if any model file is missing.
     """
     surf_path    = os.path.join(models_dir, "surface_model.joblib")
-    pruned_path  = os.path.join(models_dir, "pruned_indices.npy")
 
     if not os.path.isfile(surf_path):
         _fail(
             "Model file missing: surface_model.joblib",
             "Run  python run_all.py  to train the model and generate all artifacts.",
         )
-    if not os.path.isfile(pruned_path):
-        _fail(
-            f"Pruning index not found: {pruned_path}",
-            "Run  python run_all.py  to regenerate all model artifacts.",
-        )
 
-    surf_model     = joblib.load(surf_path)
-    pruned_indices = np.load(pruned_path)
-    return surf_model, pruned_indices
+    surf_model = joblib.load(surf_path)
+    return surf_model
 
 
 # ---------------------------------------------------------------------------
@@ -123,21 +116,16 @@ def extract_features(image_path: str):
 # ---------------------------------------------------------------------------
 # Prediction
 # ---------------------------------------------------------------------------
-def predict(feat: np.ndarray, surf_model, pruned_indices) -> tuple[str, float]:
+def predict(feat: np.ndarray, surf_model) -> tuple[str, float]:
     """
     Predict the surface platform from a single image's feature vector.
     Uses the dedicated surface_model.joblib.
     """
-    # Identify which of the 0-271 indices were KEPT during adversarial pruning
-    # (based on the Step 3 slice [544:816] in the trained 816-dim signature)
-    kept_indices_272 = [x for x in pruned_indices if x >= 544]
-    local_idx = [i % 272 for i in kept_indices_272]
-    
-    feat_pruned = feat[local_idx].reshape(1, -1)
-    surface_idx = int(surf_model.predict(feat_pruned)[0])
+    feat_input = feat.reshape(1, -1)
+    surface_idx = int(surf_model.predict(feat_input)[0])
     surface = CLASS_NAMES.get(surface_idx, "unknown")
 
-    probas = surf_model.predict_proba(feat_pruned)[0]
+    probas = surf_model.predict_proba(feat_input)[0]
     confidence = float(np.max(probas))
 
     return surface, confidence
@@ -202,9 +190,9 @@ def main() -> None:
     models_dir = _resolve("models")
 
     # --- Pipeline ---
-    surf_model, pruned_indices = load_model(models_dir)
+    surf_model                 = load_model(models_dir)
     feat                       = extract_features(args.image)
-    surface, confidence        = predict(feat, surf_model, pruned_indices)
+    surface, confidence        = predict(feat, surf_model)
     ghost, ghost_meta          = ghost_trace(feat, surface)
     
     # Forensic reconstruction: if ghost found, it is parent. Otherwise unknown parent.
