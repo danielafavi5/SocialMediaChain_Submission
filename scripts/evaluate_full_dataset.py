@@ -2,10 +2,11 @@
 evaluate_full_dataset.py
 ========================
 Diagnostic script to evaluate the Unified Sequence Engine (seq_model.joblib)
-against the ENTIRE dataset (Train + Test splits unconditionally).
+against ALL held-out test chains (i.e. all chains NOT used during training).
 
-This demonstrates the absolute capacity ceiling of the model on both
-seen and unseen compression permutations.
+This uses the same strict train/test split from samples_test_split.json
+but evaluates every qualifying test chain, confirming generalization
+performance independently of the official reproduce_results_offline.py script.
 """
 
 import os
@@ -26,6 +27,7 @@ CLASSES = ["telegram", "slack", "discord"]
 SAMPLES_DIR = os.path.join(BASE_DIR, "samples")
 MANIFEST_PATH = os.path.join(BASE_DIR, "manifest.json")
 SEQ_MODEL_PATH = os.path.join(BASE_DIR, "models", "seq_model.joblib")
+TEST_SPLIT_PATH = os.path.join(BASE_DIR, "samples_test_split.json")
 
 def _evaluate_single_chain(cid, fnames, gt_seq, seq_model):
     """Worker function for parallel chain evaluation."""
@@ -71,6 +73,20 @@ def main():
     # Build ground truth dictionary for complete 3-step chains
     gt_chains = {entry["chain_id"]: entry.get("sequence", []) for entry in manifest if entry.get("chain_id") and len(entry.get("sequence", [])) == 3}
     
+    # Load test split and derive held-out chain IDs (chains NOT in training set)
+    with open(TEST_SPLIT_PATH, "r") as f:
+        test_files = json.load(f)
+    
+    test_chain_ids = set()
+    for fname in test_files:
+        try:
+            cid = fname.split(".chain_")[1].split(".step")[0]
+            test_chain_ids.add(cid)
+        except Exception:
+            pass
+    
+    print(f"  Holdout (test) chains identified: {len(test_chain_ids)}")
+    
     # Locate all images in the samples directory
     jpgs = [f for f in os.listdir(SAMPLES_DIR) if f.lower().endswith(".jpg")]
     chains = {}
@@ -81,8 +97,12 @@ def main():
             chains[cid].append(f)
         except Exception: 
             pass
+    
+    # Filter: keep only chains in the held-out test set
+    chains = {cid: fnames for cid, fnames in chains.items() if cid in test_chain_ids}
+    print(f"  Chains available to evaluate: {len(chains)}")
             
-    print("\nStarting Parallel Full Dataset Sequence Evaluation (Train+Test)...")
+    print("\nStarting Parallel Held-Out Test Set Evaluation (Training chains excluded)...")
         
     results = Parallel(n_jobs=-1)(
         delayed(_evaluate_single_chain)(cid, fnames, gt_chains[cid], seq_model)
