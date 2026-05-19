@@ -13,7 +13,7 @@ if BASE_DIR not in sys.path:
 
 from core.forensic_features import ForensicFeatureExtractor
 
-SAMPLES_DIR = os.path.join(BASE_DIR, "results_2026", "results_2026")
+SAMPLES_DIR = os.path.join(BASE_DIR, "results_2026")
 CACHE_FILE = os.path.join(BASE_DIR, "unified_sequence_cache_2026.npz")
 CLASS_MAP = {"telegram": 0, "slack": 1, "discord": 2}
 
