@@ -199,11 +199,45 @@ def main() -> None:
     chain = ([ghost] if ghost else ["unknown"]) + [surface]
 
     # --- Output ---
+    # --- Output ---
     bname = os.path.basename(args.image)
+    dirname = os.path.dirname(args.image)
     gt_surface = None
-    if ".step" in bname:
+    gt_ghost = None
+    gt_chain = None
+
+    if ".chain_" in bname and ".step" in bname:
         try:
+            cid = bname.split(".chain_")[1].split(".step")[0]
+            step = int(bname.split(".step")[1].split(".")[0])
             gt_surface = bname.split(".")[-2].lower()
+            
+            # Lookup in manifest
+            manifest_path = _resolve("manifest.json")
+            if os.path.exists(manifest_path):
+                with open(manifest_path, "r") as f:
+                    manifest = json.load(f)
+                for entry in manifest:
+                    if entry.get("chain_id") == cid and len(entry.get("sequence", [])) == 3:
+                        gt_chain = entry["sequence"]
+                        break
+            
+            # If not in manifest, scan directory
+            if not gt_chain and os.path.isdir(dirname):
+                files = os.listdir(dirname)
+                chain_files = [f for f in files if f".chain_{cid}.step" in f]
+                s1 = next((f.split(".")[-2].lower() for f in chain_files if ".step1." in f), None)
+                s2 = next((f.split(".")[-2].lower() for f in chain_files if ".step2." in f), None)
+                s3 = next((f.split(".")[-2].lower() for f in chain_files if ".step3." in f), None)
+                if s1 and s2 and s3:
+                    gt_chain = [s1, s2, s3]
+
+            if gt_chain:
+                if step == 2:
+                    gt_ghost = gt_chain[0]
+                elif step == 3:
+                    gt_ghost = gt_chain[1]
+
         except Exception:
             pass
 
@@ -216,7 +250,10 @@ def main() -> None:
             "ghost_meta":       ghost_meta,
             "predicted_chain":  chain,
             "gt_surface":       gt_surface,
-            "surface_match":    (surface == gt_surface) if gt_surface else None
+            "gt_ghost":         gt_ghost,
+            "gt_chain":         gt_chain,
+            "surface_match":    (surface == gt_surface) if gt_surface else None,
+            "ghost_match":      (ghost == gt_ghost) if gt_ghost else None
         }
         print(json.dumps(result, indent=2))
     else:
@@ -232,10 +269,12 @@ def main() -> None:
         print(f"  Predicted chain  : {' -> '.join(chain)}")
         if gt_surface:
             print(f"  True Surface     : {gt_surface.upper()}")
-            if surface == gt_surface:
-                print("  Status           : [SURFACE MATCH]")
-            else:
-                print("  Status           : [SURFACE MISMATCH]")
+            print(f"  Status           : [{'SURFACE MATCH' if surface == gt_surface else 'SURFACE MISMATCH'}]")
+        if gt_ghost:
+            print(f"  True Ghost Prior : {gt_ghost.upper()}")
+            print(f"  Status           : [{'GHOST MATCH' if ghost == gt_ghost else 'GHOST MISMATCH'}]")
+        if gt_chain:
+            print(f"  True Full Chain  : {' -> '.join(gt_chain)}")
         print("  " + "=" * 46 + "\n")
 
 
