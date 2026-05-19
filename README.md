@@ -82,7 +82,7 @@ This is reflected in the Step 1 accuracy jumping from **23.9% to 97.0%**, demons
 To demonstrate that the Unified Engine natively scales with more data, we have designed two supplementary test scripts to run on a larger ~7,000 image dataset. 
 
 > [!NOTE]
-> **Dataset Download:** Due to Git file size limits, the 11 GB dataset is hosted externally. You can download the images from [this Google Drive link](https://drive.google.com/file/d/1Ozet6Iqi9qUw-lLKO3iO7HgztYXB-5x6/view?usp=sharing). To run the scalability scripts below, please download the archive and extract it such that the images are placed in a folder named exactly `results_2026/results_2026/` within the root directory of this repository.
+> **Dataset Download:** Due to Git file size limits, the 11 GB dataset is hosted externally. You can download the images from [this Google Drive link](https://drive.google.com/file/d/1Ozet6Iqi9qUw-lLKO3iO7HgztYXB-5x6/view?usp=sharing). To run the scalability scripts below, please download the archive and extract it such that the images are placed in a folder named exactly `results_2026/` within the root directory of this repository.
 
 The included scalability testing scripts are:
 - **`scripts/test_train_2026.py`**: Trains the Unified Engine strictly on the large 2026 dataset (using `GroupShuffleSplit` on the source image to prevent data leakage) and saves the resulting model as `models/seq_model_2026.joblib`.
