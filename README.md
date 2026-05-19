@@ -6,6 +6,13 @@ University of Trento — Multimedia Data Security 2026
 
 ---
 
+> [!IMPORTANT]
+> **Context for Evaluators: Diagnostic vs. Real-World Forensics**
+> This repository contains two distinct analysis paradigms:
+> 1. **Theoretical Diagnostic (`reproduce_results_offline.py`):** This script concatenates all 3 images in a chain into an 816-dimensional signature to test the absolute mathematical upper-bound of sequence recovery (yielding **74.6%** accuracy). It assumes full access to the image history (Step 1 + 2 + 3).
+> 2. **Real-World Forensic Tool (`analyze_image.py`):** In a real investigation, only the final image is available. This CLI tool strictly adheres to this limitation. It operates on a single image (272 dims) to predict the surface platform and utilizes a BKS divisibility heuristic to recover the immediate ghost prior. Because of the mathematical "Discord Trace Eraser" limit (detailed in the research summary), single-image analysis is strictly capped at a 2-step history.
+
+
 ## How to Run
 
 **1. Install dependencies**
