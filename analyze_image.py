@@ -199,18 +199,28 @@ def main() -> None:
     chain = ([ghost] if ghost else ["unknown"]) + [surface]
 
     # --- Output ---
+    bname = os.path.basename(args.image)
+    gt_surface = None
+    if ".step" in bname:
+        try:
+            gt_surface = bname.split(".")[-2].lower()
+        except Exception:
+            pass
+
     if args.json:
         result = {
-            "image":            os.path.basename(args.image),
+            "image":            bname,
             "surface_platform": surface,
             "confidence":       round(confidence, 4),
             "ghost_prior":      ghost,
             "ghost_meta":       ghost_meta,
             "predicted_chain":  chain,
+            "gt_surface":       gt_surface,
+            "surface_match":    (surface == gt_surface) if gt_surface else None
         }
         print(json.dumps(result, indent=2))
     else:
-        print(f"\n  Image            : {os.path.basename(args.image)}")
+        print(f"\n  Image            : {bname}")
         print("  " + "-" * 46)
         print(f"  RF prediction    : {surface.upper()}  (confidence {confidence:.1%})")
         if ghost and ghost_meta:
@@ -220,6 +230,12 @@ def main() -> None:
             print("  Ghost prior      : none detected")
         print("\n  " + "=" * 46)
         print(f"  Predicted chain  : {' -> '.join(chain)}")
+        if gt_surface:
+            print(f"  True Surface     : {gt_surface.upper()}")
+            if surface == gt_surface:
+                print("  Status           : [SURFACE MATCH]")
+            else:
+                print("  Status           : [SURFACE MISMATCH]")
         print("  " + "=" * 46 + "\n")
 
 
