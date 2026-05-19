@@ -5,9 +5,7 @@ __pycache__/
 
 # Data/Cache files
 *.npz
-!phase7_features_cache.npz
 *.npy
-!models/pruned_indices.npy
 
 # Config files (if any)
 config.ini
@@ -22,6 +20,5 @@ env/
 .vscode/
 .idea/
 
-# Specific project files to exclude
-defense_notes.md
+# Large Datasets
 results_2026/
