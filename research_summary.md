@@ -22,26 +22,48 @@ Reconstructing a multi-step image sharing sequence (e.g., Slack → Telegram →
 
 We formalized the question: given the final image, can we recover the platform sequence that produced it?
 
-## The Divisibility Heuristic (Archived V1 Approach)
+## The Divisibility Heuristic (BKS Backtracking)
 
-For a two-step chain `A → B`, the ratio matrix **Q_observed / Q_prior** should be close to a matrix of positive integers if **Q_prior** contributed to the current state. We compute:
+For a two-step chain `A → B`, the ratio matrix **Q_observed / Q_prior** should be close to a matrix of positive integers if **Q_prior** contributed to the current state. 
+
+### The Trivial Divisor Bias
+A major limitation of basic Q-table divisibility is its structural bias towards small-coefficient Q-tables (like Slack and Discord). Because these tables consist mostly of `1`s and `2`s, dividing *any* observed Q-table by them will naturally yield near-integer ratios (e.g., dividing by 1 always yields a perfect integer), dragging the mean L1 error down artificially. 
+
+### The Non-Trivial Masking Fix
+To eliminate this bias, we restrict the L1 error calculation strictly to the **non-trivial coefficients** where the candidate library table contains values greater than 1:
 
 ```
-ratio = Q_observed / Q_prior
+mask = (Q_prior > 1)
+ratio = Q_observed[mask] / Q_prior[mask]
 error = mean( |ratio - round(ratio)| )
 ```
 
-If `error < 0.25` and the mean ratio value exceeds 1.0, the prior platform is classified as the ghost ancestor. This worked for Telegram/Slack ancestors but was completely defeated by Discord's low-coefficient table.
+We require a minimum of 8 non-trivial coefficients for a statistically valid check. If the condition `error < 0.25` is met, the candidate is classified as a prior ancestor. This prevents low-quantization tables from generating false-positive matches.
 
-## The Discord Tracing Limit
+## The Discord Tracing Limit and the API Lossless Paradox
 
-Discord's 2026 Luma quantization table contains small, clustered coefficients — starting at 1 for the lowest frequencies and rising gradually to 9 at the highest. When this table is used as the candidate library entry in the divisibility check, the resulting ratios are large and irregular because the observed image has passed through a subsequent platform with substantially larger Q-values. The mean L1 error between those ratios and the nearest integers exceeds the acceptance threshold, so the check returns no match.
+### The Real-World Tracing Limit (Lossy Erasure)
+In a real-world forensic scenario where an end-user downloads a JPEG image directly from the Discord desktop/mobile clients, Discord's server aggressively compresses the image, stamping it with a low-coefficient quantization table (e.g., the `2026 Discord` Q-table containing values in the range 1–9). When this table is used as the candidate library entry in a divisibility check, the resulting ratios are highly irregular and far from integers, removing the information needed to recover earlier steps via Q-table arithmetic. No mathematical formula operating on quantization table ratios can look past this limit.
 
-The practical consequence — which we call the *Discord tracing limit* — is as follows: **once an image passes through Discord, Discord's compression removes the information needed to recover earlier steps via Q-table arithmetic.** No mathematical formula operating on quantization table ratios can look past this limit.
+### The API Sandbox Behavior (Lossless Propagation & The Telegram Dominance)
+During live-API data collection (via the `core/chained_uploader.py` script), we observed that **Discord's CDN serves uploaded attachments losslessly (`att.url`).** Discord does not compress the image when programmatically uploaded and downloaded via the bot API. Similarly, **Slack serves files losslessly** unless the image exceeds its client-side 4MB pre-compression safeguard threshold. 
 
-**Why the original paper's cascade approach would not solve this.** The backtracking block cascade proposed by Verde et al. uses ensembles of classifiers fed multiple feature representations — DCT statistics, metadata flags, and container-level structural features. All of those features are derived from the image that remains *after* the most recent platform has processed it. For any chain passing through Discord, the relevant prior-platform signal is compressed into Discord's low-coefficient space and lost. A more sophisticated classifier ensemble operating on the same post-Discord image would face the same information gap.
+Because Telegram is the *only* platform that always forces server-side recompression, and because Discord and Slack act as lossless hosts:
+* If Telegram is early in the chain (e.g., `Telegram -> Slack -> Discord`), it compresses the image first. The compressed file is small, so Slack and Discord pass it along losslessly. The final Step 3 image downloaded from Discord still bears Telegram's Q-table.
+* If Telegram is late in the chain (e.g., `Slack -> Discord -> Telegram`), Telegram compresses the image in the final step, stamping it with Telegram's Q-table.
 
-## Benford's Law Distribution Analysis — Recovery Beyond the Horizon
+Consequently, in **100% of the completed sequences** in our dataset, the Step 3 image carrying the Telegram Q-table has **zero variance**. 
+
+### Why the Traditional Divisibility Approach Fails in Both Configurations
+Traditional Q-table divisibility fails under both paradigms:
+1. **In the Real World**: It fails due to **lossy erasure** (Discord compresses aggressively, erasing the prior Q-table traces).
+2. **In our API Sandbox**: It fails due to **lossless propagation** (Discord does not compress, meaning the final Step 3 Q-table is always Telegram's, leading to zero feature variance across all sequences).
+
+In both configurations, we cannot determine the surface platform or sequence order using the final step's Q-table alone. 
+
+**Why the original paper's cascade approach would not solve this.** The backtracking block cascade proposed by Verde et al. uses ensembles of classifiers fed multiple feature representations. For any chain passing through Discord, either the prior-platform signal is compressed into Discord's low-coefficient space and lost (real world), or it is transparently passed through from Telegram without leaving a new platform-specific Q-table stamp (our sandbox). An ensemble operating only on post-step features faces an information gap.
+
+## Benford's Law Distribution Analysis — Recovery Beyond the Tracing Limit
 
 Benford's Law states that in many naturally occurring numerical datasets, the leading digit `d` appears with frequency:
 
@@ -67,14 +89,14 @@ Discord, Telegram, and Slack differ in their characteristic marker orderings —
 
 ### V2 Unified Sequence Engine (current: `master`)
 
-| Task | Metric | Score |
-|---|---|---|
-| Step 1 platform reconstruction | chain accuracy | **97.0%** |
-| Step 2 platform reconstruction | chain accuracy | **79.1%** |
-| Step 3 platform reconstruction (surface) | chain accuracy | **85.1%** |
-| Exact 3-step chain reconstruction | chain accuracy | **74.6%** |
+| Metric | Concatenated (Validation Sandbox) | True Blind (Tracing Limit) |
+|---|:---:|:---:|
+| **Step 1 Accuracy** | **97.2%** | **50.0%** |
+| **Step 2 Accuracy** | **88.9%** | **29.2%** |
+| **Step 3 Accuracy** | **88.9%** | **55.6%** |
+| **Exact 3-Step Match** | **87.5%** | **11.1%** |
 
-*Evaluated on 67 held-out chains, spanning all 6 permutations of Telegram, Slack, and Discord.*
+*Evaluated on 72 held-out chains, spanning all 6 permutations of Telegram, Slack, and Discord.*
 
 ### V1 Modular Architecture (reference: `archive/v1-modular-baseline`)
 
@@ -88,10 +110,10 @@ Discord, Telegram, and Slack differ in their characteristic marker orderings —
 
 | Metric | V1 | V2 | Change |
 |---|---|---|---|
-| Step 1 accuracy | 23.9% | 97.0% | **+73.1pp** |
-| Exact 3-step match | 4.5% | 74.6% | **+70.1pp** |
+| Step 1 accuracy | 23.9% | 97.2% | **+73.3pp** |
+| Exact 3-step match | 4.5% | 87.5% | **+83.0pp** |
 
-The 74.6% exact sequence match represents a **16.5× improvement** over the prior BKS fused baseline. The step 1 accuracy improvement from 23.9% to 97.0% directly demonstrates the effectiveness of Benford's Law Distribution Analysis and Container Byte Analysis in providing residual signal beyond the Discord tracing limit.
+The 87.5% exact sequence match represents a **19.4× improvement** over the prior BKS fused baseline. The step 1 accuracy improvement from 23.9% to 97.2% directly demonstrates the effectiveness of Benford's Law Distribution Analysis and Container Byte Analysis in providing residual signal beyond the Discord tracing limit.
 
 ---
 
@@ -99,6 +121,10 @@ The 74.6% exact sequence match represents a **16.5× improvement** over the prio
 
 The Discord tracing limit — a mathematical boundary imposed by Discord's aggressive low-coefficient quantization — is not fully overcome by the V2 approach. It remains the case that Q-table divisibility cannot recover any prior-compression information once Discord has processed an image. However, the Unified Sequence Engine demonstrates that two alternative signal classes — Benford's Law coefficient distribution analysis and JPEG container byte ordering — provide statistically meaningful partial recovery that was not accessible to the V1 modular approach.
 
-The architectural shift from independent per-step classification (C1/C2/BKS) to a unified 816-dimensional chain signature with simultaneous multi-output prediction is the primary driver of the accuracy improvement. By treating the full compression history as a single structured input rather than a sequence of isolated events, the model is able to leverage cross-step dependencies that would otherwise be discarded.
+The architectural shift from independent per-step classification (C1/C2/BKS) to a unified 816-dimensional chain signature with simultaneous multi-output prediction is the primary driver of the sandbox validation accuracy. By treating the complete compression history (concatenated features of Step 1, Step 2, and Step 3 images) as a single input, the model leverages cross-step timeline dependencies. 
 
-Future work that could further reduce the horizon effect would involve generative AI-based signal reconstruction (inferring the pre-Discord coefficient distribution from context) or CNN-based spatial analysis that operates on the raw pixel grid rather than global statistical summaries.
+However, two architectural constraints are present:
+1. **Offline Evaluation Feature Leakage**: This 816-dimensional concatenated format assumes visibility of all intermediate chain images. In a practical forensic scenario where only the final Step 3 image is available, a blind sequence model operating strictly on the final image's 272-dimensional vector achieves an exact sequence match accuracy of **11.1%**.
+2. **CLI Predictor Decoupling**: Because the Classifier Chain model (`seq_model.joblib`) requires the 816-dimensional concatenated vector of three distinct images, the standalone inference script (`analyze_image.py`) cannot run it on a single user-supplied image. The CLI tool is therefore decoupled from the Classifier Chain and falls back to a 2-step surface platform prediction plus a single BKS parent traceback.
+
+Future work to address this tracing limit would involve sequence models trained strictly on single final images, generative reconstruction of prior coefficients, or CNN-based spatial grid analysis rather than statistical summaries.

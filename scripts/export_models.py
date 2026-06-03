@@ -11,7 +11,7 @@ import json
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.multioutput import ClassifierChain
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GroupShuffleSplit
 from sklearn.metrics import f1_score
 import joblib
 from joblib import Parallel, delayed
@@ -59,7 +59,8 @@ def _process_single_chain(cid, chain_files, gt_chains, samples_dir):
             return None
         vecs.append(fvec)
         
-    return np.concatenate(vecs), lbls
+    source_id = step1_file.split(".chain_")[0] if step1_file else "unknown"
+    return np.concatenate(vecs), lbls, source_id
 
 def main():
     os.makedirs(MODELS_DIR, exist_ok=True)
@@ -88,7 +89,22 @@ def main():
             pass
 
     chain_ids = sorted(list(gt_chains.keys()))
-    train_cids, test_cids = train_test_split(chain_ids, test_size=0.2, random_state=42)
+    
+    source_ids_all = []
+    for cid in chain_ids:
+        chain_files = chains.get(cid, [])
+        if chain_files:
+            step1_file = next((f for f in chain_files if ".step1." in f), chain_files[0])
+            source_id = step1_file.split(".chain_")[0]
+            source_ids_all.append(source_id)
+        else:
+            source_ids_all.append("unknown")
+            
+    gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+    train_idx, test_idx = next(gss.split(chain_ids, groups=source_ids_all))
+    
+    train_cids = [chain_ids[i] for i in train_idx]
+    test_cids = [chain_ids[i] for i in test_idx]
 
     # Save test files for offline evaluation
     test_files = []
@@ -102,6 +118,7 @@ def main():
         data = np.load(CACHE_FILE)
         X_pruned = data['X_train']
         y = data['y_seq_labels']
+        source_ids_train = data.get('source_ids', np.array([]))
     else:
         print("  Extracting Train Features (full chain: step1+step2+step3 concatenated)...")
         # Extract all 3 steps and concatenate into a 816-dim chain signature
@@ -112,11 +129,14 @@ def main():
             for cid in train_cids
         )
         
-        X_list = [r[0] for r in results if r is not None]
-        y_list = [r[1] for r in results if r is not None]
+        valid_results = [r for r in results if r is not None]
+        X_list = [r[0] for r in valid_results]
+        y_list = [r[1] for r in valid_results]
+        source_ids_list = [r[2] for r in valid_results]
     
         X = np.vstack(X_list)
         y = np.array(y_list)
+        source_ids_train = np.array(source_ids_list)
         
         feat_dim = X.shape[1]
         print(f"  Samples used: {X.shape[0]} | Feature dims (raw): {feat_dim}")
@@ -125,13 +145,15 @@ def main():
         X_pruned = X
     
         # Cache Naming Convention Guardrail
-        np.savez_compressed(CACHE_FILE, X_train=X_pruned, y_seq_labels=y)
+        np.savez_compressed(CACHE_FILE, X_train=X_pruned, y_seq_labels=y, source_ids=source_ids_train)
         print(f"  Saved unified cache to {CACHE_FILE}")
 
     # Train Seq2Seq Model
-    X_tr, X_val, y_tr, y_val = train_test_split(
-        X_pruned, y, test_size=0.2, random_state=42
-    )
+    gss_val = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+    tr_idx, val_idx = next(gss_val.split(X_pruned, y, groups=source_ids_train))
+    
+    X_tr, X_val = X_pruned[tr_idx], X_pruned[val_idx]
+    y_tr, y_val = y[tr_idx], y[val_idx]
 
     base_rf = RandomForestClassifier(n_estimators=500, min_samples_leaf=1, max_features=0.2, class_weight="balanced", random_state=42, n_jobs=-1)
     seq_model = ClassifierChain(base_rf, order=[0, 1, 2], cv=5)
@@ -164,6 +186,17 @@ def main():
     surf_model.fit(X_surf, y_surf)
     joblib.dump(surf_model, SURF_MODEL_PATH)
     print(f"  Saved single-step Surface Model to {SURF_MODEL_PATH}")
+
+    # Train and Save True Sequence Model (Blind Single Image Mode)
+    # This trains a Classifier Chain strictly on Step 3 features to predict the entire 3-step sequence
+    # without using intermediate features.
+    X_true_seq = X_pruned[:, 544:] if X_pruned.shape[1] == 816 else X_pruned
+    TRUE_SEQ_MODEL_PATH = os.path.join(MODELS_DIR, "true_seq_model.joblib")
+    
+    true_seq_model = ClassifierChain(base_rf, order=[0, 1, 2], cv=5)
+    true_seq_model.fit(X_true_seq, y)
+    joblib.dump(true_seq_model, TRUE_SEQ_MODEL_PATH)
+    print(f"  Saved True blind Sequence Model to {TRUE_SEQ_MODEL_PATH}")
 
 if __name__ == "__main__":
     main()

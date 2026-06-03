@@ -20,13 +20,14 @@ from core.forensic_features import ForensicFeatureExtractor
 
 MODELS_DIR = os.path.join(BASE_DIR, "models")
 SEQ_MODEL_PATH = os.path.join(MODELS_DIR, "seq_model.joblib")
+TRUE_SEQ_MODEL_PATH = os.path.join(MODELS_DIR, "true_seq_model.joblib")
 TEST_SPLIT_PATH = os.path.join(BASE_DIR, "samples_test_split.json")
 SAMPLES_DIR = os.path.join(BASE_DIR, "samples")
 MANIFEST_PATH = os.path.join(BASE_DIR, "manifest.json")
 
 CLASSES = ["telegram", "slack", "discord"]
 
-def _evaluate_single_chain(cid, fnames, gt_chains, samples_dir, seq_model):
+def _evaluate_single_chain(cid, fnames, gt_chains, samples_dir, seq_model, true_seq_model):
     """Worker function for parallel chain evaluation."""
     from core.forensic_features import ForensicFeatureExtractor
     extractor = ForensicFeatureExtractor()
@@ -49,11 +50,20 @@ def _evaluate_single_chain(cid, fnames, gt_chains, samples_dir, seq_model):
             return None
         vecs.append(fvec)
     
-    feat_input = np.concatenate(vecs)
+    # 1. Pipeline validation (Concatenated features step1+step2+step3)
+    feat_input_concat = np.concatenate(vecs)
+    
+    # 2. True blind sequence prediction (strictly step 3/final image's 272 features)
+    feat_input_blind = vecs[2]
 
     try:
-        pred_idx_seq = seq_model.predict([feat_input])[0].astype(int)
+        # Concatenated predictions
+        pred_idx_seq = seq_model.predict([feat_input_concat])[0].astype(int)
         pred_seq = [CLASSES[idx] for idx in pred_idx_seq]
+        
+        # Blind predictions
+        pred_idx_blind = true_seq_model.predict([feat_input_blind])[0].astype(int)
+        pred_seq_blind = [CLASSES[idx] for idx in pred_idx_blind]
     except Exception:
         return None
 
@@ -61,7 +71,9 @@ def _evaluate_single_chain(cid, fnames, gt_chains, samples_dir, seq_model):
         "cid": cid,
         "true_seq": true_seq,
         "pred_seq": pred_seq,
-        "match": true_seq == pred_seq
+        "pred_seq_blind": pred_seq_blind,
+        "match": true_seq == pred_seq,
+        "match_blind": true_seq == pred_seq_blind
     }
 
 def _fail(title: str, msg: str):
@@ -71,11 +83,14 @@ def _fail(title: str, msg: str):
 def main():
     if not os.path.isfile(SEQ_MODEL_PATH):
         _fail("Model missing", "Run 'python scripts/export_models.py' first.")
+    if not os.path.isfile(TRUE_SEQ_MODEL_PATH):
+        _fail("True sequence model missing", "Run 'python scripts/export_models.py' first.")
 
     try:
         seq_model = joblib.load(SEQ_MODEL_PATH)
+        true_seq_model = joblib.load(TRUE_SEQ_MODEL_PATH)
     except Exception as e:
-        _fail("Model Load Failed", f"Could not load {SEQ_MODEL_PATH}: {e}")
+        _fail("Model Load Failed", f"Could not load models: {e}")
 
     # Load ground truth chains
     try:
@@ -104,12 +119,10 @@ def main():
         except Exception:
             pass
 
-    extractor = ForensicFeatureExtractor()
-
     print("\nStarting Parallel Offline Sequence Evaluation (Unified v2)...")
     
     results = Parallel(n_jobs=-1)(
-        delayed(_evaluate_single_chain)(cid, fnames, gt_chains, SAMPLES_DIR, seq_model)
+        delayed(_evaluate_single_chain)(cid, fnames, gt_chains, SAMPLES_DIR, seq_model, true_seq_model)
         for cid, fnames in test_chains.items()
     )
     
@@ -117,35 +130,49 @@ def main():
     
     total_chains = 0
     exact_matches = 0
+    exact_matches_blind = 0
+    
     step_correct = {0: 0, 1: 0, 2: 0}
+    step_correct_blind = {0: 0, 1: 0, 2: 0}
 
-    print("\n  [Chain ID]         [True Sequence]                [Predicted Sequence]")
-    print("  " + "-"*75)
+    print("\n  [Chain ID]         [True Sequence]                [Concatenated Pred]       [True Blind Pred]")
+    print("  " + "-"*98)
 
     for r in processed_results:
         true_str = ">".join(r["true_seq"])
         pred_str = ">".join(r["pred_seq"])
+        pred_str_blind = ">".join(r["pred_seq_blind"])
+        
         match_flag = "OK" if r["match"] else "--"
-        print(f"  {r['cid'][:18]:<18} {true_str:<30} {pred_str:<25} [{match_flag}]")
+        match_flag_blind = "OK" if r["match_blind"] else "--"
+        
+        print(f"  {r['cid'][:18]:<18} {true_str:<30} {pred_str:<20} [{match_flag}]  {pred_str_blind:<20} [{match_flag_blind}]")
 
         total_chains += 1
         if r["match"]:
             exact_matches += 1
+        if r["match_blind"]:
+            exact_matches_blind += 1
             
         for i in range(3):
             if r["true_seq"][i] == r["pred_seq"][i]:
                 step_correct[i] += 1
+            if r["true_seq"][i] == r["pred_seq_blind"][i]:
+                step_correct_blind[i] += 1
 
-    print("\n" + "="*60)
+    print("\n" + "="*80)
     if total_chains > 0:
         print(f"  Total Chains Evaluated: {total_chains}")
-        print(f"  Step 1 Accuracy     : {step_correct[0]/total_chains * 100:.1f}%")
-        print(f"  Step 2 Accuracy     : {step_correct[1]/total_chains * 100:.1f}%")
-        print(f"  Step 3 Accuracy     : {step_correct[2]/total_chains * 100:.1f}%")
-        print(f"  Exact Sequence Match: {exact_matches/total_chains * 100:.1f}%")
+        print("  " + "-"*75)
+        print("  Metric                         | Concatenated (Validation) | True Blind (Forensic Limit)")
+        print("  " + "-"*75)
+        print(f"  Step 1 Accuracy                | {step_correct[0]/total_chains * 100:>21.1f}% | {step_correct_blind[0]/total_chains * 100:>23.1f}%")
+        print(f"  Step 2 Accuracy                | {step_correct[1]/total_chains * 100:>21.1f}% | {step_correct_blind[1]/total_chains * 100:>23.1f}%")
+        print(f"  Step 3 Accuracy                | {step_correct[2]/total_chains * 100:>21.1f}% | {step_correct_blind[2]/total_chains * 100:>23.1f}%")
+        print("  " + "-"*75)
+        print(f"  Exact Sequence Match Accuracy  | {exact_matches/total_chains * 100:>21.1f}% | {exact_matches_blind/total_chains * 100:>23.1f}%")
     else:
         print("  No chains evaluated.")
-    print("="*60 + "\n")
-
+    print("="*80 + "\n")
 if __name__ == "__main__":
     main()

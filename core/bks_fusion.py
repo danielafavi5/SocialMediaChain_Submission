@@ -47,13 +47,21 @@ class SequenceAwareBKS:
                     l1_tolerance: float = 0.25):
         if current_dqt.shape != lib_dqt.shape:
             return False, None
-        if np.sum(lib_dqt == 1) > 32:
+            
+        # Exclude trivial coefficients (quantization step <= 1) from the divisibility error calculation.
+        # This eliminates the mathematical bias where small divisors (1s and 2s) drag down the mean error.
+        non_trivial = (lib_dqt > 1)
+        if np.sum(non_trivial) < 8:  # Require at least 8 non-trivial coefficients to be statistically reliable
             return False, None
+            
         lib_safe = np.where(lib_dqt == 0, 1e-6, lib_dqt).astype(float)
         ratio    = current_dqt.astype(float) / lib_safe
         nearest  = np.rint(ratio)
-        mean_error   = float(np.mean(np.abs(ratio - nearest)))
-        mean_nearest = float(np.mean(np.abs(nearest)))
+        
+        # Calculate error strictly on the non-trivial coefficients
+        mean_error   = float(np.mean(np.abs(ratio[non_trivial] - nearest[non_trivial])))
+        mean_nearest = float(np.mean(np.abs(nearest[non_trivial])))
+        
         if mean_error < l1_tolerance:
             return True, {
                 "ratio":        nearest.astype(int).tolist(),

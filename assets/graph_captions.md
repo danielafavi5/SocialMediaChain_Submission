@@ -1,7 +1,20 @@
-# Asset Captions
-The graphs within this folder are the core visual evidence for the presentation slides.
+# Visual Assets for Model Evaluation
 
-*   `tsne_drift.png`: **The Concept Drift (t-SNE)**. Visual proof that the 2026 platform footprint (blue scatter) has fundamentally shifted away from the 2024 footprint (orange scatter), explaining why legacy models blindly fail.
-*   `confusion_matrices.png`: **BKS Model Accuracy**. The confusion matrix proving our single-step Adversarially Pruned BKS model achieves 94.2% diagnostic accuracy distinguishing modern 2026 platform surfaces.
-*   `feature_importance.png`: **Gini Importance Verification**. The feature usage chart proving the model successfully ignores drifted signals and relies mathematically on the Markov T4 Transition Probabilities and Histogram Ghost Peaks.
-*   `sequence_confusion.png`: **The tracing limit (Loop Collapse)**. The deep-chain confusion matrix highlighting 0.0% sequence accuracy at 3-steps. Discord effectively erases coefficient ratios, mathematically collapsing the deterministic trace into tracking loops.
+This directory contains the visual representations generated from the evaluation of the Unified Sequence Engine (V2) pipeline.
+
+---
+
+## 1. System and Feature Structure
+
+*   **`pipeline_flowchart.png`**: **Pipeline Diagram**. A block diagram showing the end-to-end processing sequence: Data Ingestion $\rightarrow$ Feature Extraction (272 dimensions) $\rightarrow$ Sequential Classifier Chain $\rightarrow$ Behavior-Knowledge Space (BKS) traceback $\rightarrow$ Output Sequence.
+*   **`feature_composition.png`**: **Feature Vector Composition**. A block diagram showing the dimensions and index slices of the 11 forensic feature families extracted from each image, as defined in `core/forensic_features.py`.
+
+---
+
+## 2. Evaluation Results
+
+*   **`feature_importance.png`**: **Feature Family Importance**. A bar chart showing the aggregate Random Forest feature importances grouped by feature family.
+*   **`offline_evaluation_metrics.png`**: **Holdout Performance Metrics**. A bar chart showing the exact sequence match accuracy (87.5%) and per-step classification accuracies (Step 1: 97.2%, Step 2: 88.9%, Step 3: 88.9%) on the held-out test split.
+*   **`model_comparison.png`**: **Model Comparison**. A bar chart comparing the exact sequence match accuracy of the finalized sequence model (87.5%) and the experimental 2026 model (84.7%) on the held-out test split.
+*   **`sequence_confusion_matrix.png`**: **Sequence Confusion Matrix**. A row-normalized confusion matrix heatmap of predicted vs. true sharing sequences on the test split.
+*   **`example_predictions_table.png`**: **Sample Predictions Table**. A table displaying a subset of the first 10 testing samples, including the Sample ID, ground truth sequence, predicted sequence, and binary match flag.
